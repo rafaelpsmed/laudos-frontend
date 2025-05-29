@@ -1,6 +1,6 @@
 import { AppShell, Burger, Group, NavLink, Button, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport } from '@tabler/icons-react';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconTransfer, IconSettings } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { jwtDecode } from "jwt-decode";
@@ -97,6 +97,16 @@ function Layout({ children }) {
           label="Laudos"
           leftSection={<IconReport size={20} />}
           onClick={() => navigate('/laudos')}
+        />
+        <NavLink
+          label="Transferir Frases entre Modelos"
+          leftSection={<IconTransfer size={20} />}
+          onClick={() => navigate('/transferir-frases')}
+        />
+        <NavLink
+          label="Configurações"
+          leftSection={<IconSettings size={20} />}
+          onClick={() => navigate('/configuracoes')}
         />
       </AppShell.Navbar>
 

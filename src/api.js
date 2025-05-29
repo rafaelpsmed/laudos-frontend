@@ -1,8 +1,11 @@
 import axios from 'axios';
 import { ACCESS_TOKEN, REFRESH_TOKEN } from './constants';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+console.log('API URL:', API_URL); // Log para debug
+
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+    baseURL: API_URL,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
@@ -16,9 +19,11 @@ api.interceptors.request.use(
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`;
         }
+        console.log('Request config:', config); // Log para debug
         return config;
     },
     (error) => {
+        console.error('Request error:', error); // Log para debug
         return Promise.reject(error);
     }
 );
@@ -26,9 +31,11 @@ api.interceptors.request.use(
 // Interceptor para tratar erros de resposta
 api.interceptors.response.use(
     (response) => {
+        console.log('Response:', response); // Log para debug
         return response;
     },
     async (error) => {
+        console.error('Response error:', error); // Log para debug
         const originalRequest = error.config;
 
         // Se o erro for 401 e não for uma tentativa de refresh
@@ -43,7 +50,7 @@ api.interceptors.response.use(
 
                 // Tenta obter um novo token
                 const response = await axios.post(
-                    `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/auth/refresh/`,
+                    `${API_URL}/api/auth/refresh/`,
                     { refresh: refreshToken }
                 );
 

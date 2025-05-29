@@ -1,5 +1,5 @@
-import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch } from '@mantine/core';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder } from '@tabler/icons-react';
+import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs } from '@mantine/core';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { jwtDecode } from "jwt-decode";
@@ -40,10 +40,22 @@ function Frases() {
   const [titulosFiltrados, setTitulosFiltrados] = useState([]);
   const [modalAberto, setModalAberto] = useState(false);
   const [treeData, setTreeData] = useState([]);
+  const [treeDataSemMetodos, setTreeDataSemMetodos] = useState([]);
+  const [treeDataModelo, setTreeDataModelo] = useState([]);
+
+  // Novos estados para a aba Frases sem Modelo
+  const [categoriaSemModelo, setCategoriaSemModelo] = useState('');
+  const [tituloFraseSemModelo, setTituloFraseSemModelo] = useState('');
+  const [fraseBaseSemModelo, setFraseBaseSemModelo] = useState('');
+  const [fraseIdSemModelo, setFraseIdSemModelo] = useState(null);
+  const [categoriasFiltradasSemModelo, setCategoriasFiltradasSemModelo] = useState([]);
+  const [titulosFiltradosSemModelo, setTitulosFiltradosSemModelo] = useState([]);
 
   const navigate = useNavigate();
   const comboboxCategoria = useCombobox();
   const comboboxTituloFrase = useCombobox();
+  const comboboxCategoriaSemModelo = useCombobox();
+  const comboboxTituloFraseSemModelo = useCombobox();
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -152,16 +164,97 @@ function Frases() {
     fetchCategoriasSemMetodos();
   }, []);
 
+  // useEffect para carregar categorias sem modelo
+  useEffect(() => {
+    const fetchCategoriasSemModelo = async () => {
+      try {
+        // Busca todas as frases para identificar quais categorias não têm modelo
+        const frasesResponse = await api.get('/api/frases/');
+        const frases = frasesResponse.data;
+        
+        // Filtra as frases que não têm modelo associado
+        const frasesSemModelo = frases.filter(frase => !frase.modelos_laudo || frase.modelos_laudo.length === 0);
+        
+        // Obtém as categorias únicas das frases sem modelo
+        const categoriasSemModelo = [...new Set(frasesSemModelo.map(frase => frase.categoriaFrase))];
+        
+        if (categoriasSemModelo.length > 0) {
+          setCategoriasFiltradasSemModelo([{
+            group: 'Categorias sem Método',
+            items: categoriasSemModelo.map(cat => ({
+              value: cat,
+              label: cat
+            }))
+          }]);
+        } else {
+          setCategoriasFiltradasSemModelo([]);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar categorias sem métodos:', error);
+        setCategoriasFiltradasSemModelo([]);
+      }
+    };
+
+    fetchCategoriasSemModelo();
+  }, []);
+
   const handleLogout = () => {
     localStorage.clear();
     navigate('/logout');
   };
 
-  const handleMetodosModeloChange = (newValue) => {
+  const handleMetodosModeloChange = async (newValue) => {
+    console.log('handleMetodosModeloChange chamado com newValue:', newValue);
     setMetodosModelo(newValue);
     setTitulo('');
     setTexto('');
     setModeloId(null);
+
+    try {
+      if (!newValue || newValue.length === 0) {
+        console.log('Nenhum método selecionado, buscando categorias sem métodos');
+        // Se não houver método selecionado, busca categorias sem métodos
+        const response = await api.get('/api/frases/categorias-sem-metodos/');
+        console.log('Resposta categorias sem métodos:', response.data);
+        if (response.data && Array.isArray(response.data.categorias)) {
+          setCategoriasFiltradas([{
+            group: 'Categorias sem Método',
+            items: response.data.categorias.map(cat => ({
+              value: cat,
+              label: cat
+            }))
+          }]);
+        }
+      } else {
+        // Busca o modelo selecionado pelos títulos disponíveis
+        const modeloSelecionado = titulosDisponiveis.find(item => item.metodo === newValue[0]);
+        if (!modeloSelecionado) {
+          console.error('Modelo não encontrado para o método:', newValue[0]);
+          return;
+        }
+
+        console.log('Modelo selecionado:', modeloSelecionado);
+        // Busca as categorias usando o ID do título do modelo
+        const response = await api.get('/api/frases/categorias/', {
+          params: { modelo_laudo_id: modeloSelecionado.id }
+        });
+        console.log('Resposta categorias do modelo:', response.data);
+        
+        if (response.data && Array.isArray(response.data.categorias)) {
+          setCategoriasFiltradas([{
+            group: 'Categorias do Modelo',
+            items: response.data.categorias.map(cat => ({
+              value: cat,
+              label: cat
+            }))
+          }]);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao buscar categorias:', error);
+      console.error('Detalhes do erro:', error.response?.data);
+      setCategoriasFiltradas([]);
+    }
   };
 
   const handleCategoriaChange = async (newValue) => {
@@ -199,17 +292,16 @@ function Frases() {
     try {
       setTituloFrase(selectedTitulo);
       
-      // Busca a frase diretamente do backend usando a rota correta
-      const response = await api.get('/api/frases/frases/', {
+      // Busca a frase usando a rota correta
+      const response = await api.get('/api/frases/', {
         params: {
           titulo_frase: selectedTitulo,
-          categoria: categoria,
-          modelo_laudo_id: modeloId
+          categoria: categoria
         }
       });
 
-      if (response.data && response.data.frases && response.data.frases.length > 0) {
-        const frase = response.data.frases[0];
+      if (response.data && response.data.length > 0) {
+        const frase = response.data[0];
         console.log('Frase encontrada:', frase);
         
         // Preenche os campos com os dados da frase
@@ -219,20 +311,14 @@ function Frases() {
         setSubstituicoesOutras(frase.frase.substituicoesOutras || []);
         setConclusao(frase.frase.conclusao || '');
         
-        // Se tiver modelo de laudo associado, busca o texto
-        if (frase.modelo_laudo) {
+        // Mantém o texto do modelo atual no editor
+        if (modeloId) {
           try {
-            const modeloResponse = await api.get(`/api/modelo_laudo/${frase.modelo_laudo}/`);
+            const modeloResponse = await api.get(`/api/modelos-laudo/${modeloId}/`);
             setTexto(modeloResponse.data.texto || '');
-            setModeloId(frase.modelo_laudo);
           } catch (error) {
             console.error('Erro ao buscar modelo:', error);
-            setTexto('');
-            setModeloId(null);
           }
-        } else {
-          setTexto('');
-          setModeloId(null);
         }
       } else {
         console.log('Frase não encontrada');
@@ -241,8 +327,7 @@ function Frases() {
         setSubstituicaoFraseBase('');
         setSubstituicoesOutras([]);
         setConclusao('');
-        setTexto('');
-        setModeloId(null);
+        setFraseId(null);
       }
     } catch (error) {
       console.error('Erro ao selecionar título:', error);
@@ -251,8 +336,7 @@ function Frases() {
       setSubstituicaoFraseBase('');
       setSubstituicoesOutras([]);
       setConclusao('');
-      setTexto('');
-      setModeloId(null);
+      setFraseId(null);
     }
   };
 
@@ -296,6 +380,36 @@ function Frases() {
       
       setTexto(textoFormatado);
       setModeloId(modeloSelecionado.id);
+      
+      // Busca as frases associadas ao modelo
+      const frasesResponse = await api.get('/api/frases/');
+      const frasesDoModelo = frasesResponse.data.filter(f => 
+        f.modelos_laudo && f.modelos_laudo.includes(modeloSelecionado.id)
+      );
+
+      console.log('Frases do modelo:', frasesDoModelo);
+      
+      // Organiza as frases por categoria
+      const categorias = [...new Set(frasesDoModelo.map(frase => frase.categoriaFrase))];
+      
+      const treeItems = categorias.map(categoria => {
+        const frasesCategoria = frasesDoModelo.filter(frase => frase.categoriaFrase === categoria);
+        
+        const children = frasesCategoria.map(frase => ({
+          id: `${categoria}-${frase.tituloFrase}`,
+          name: frase.tituloFrase,
+          type: 'titulo'
+        }));
+
+        return {
+          id: categoria,
+          name: categoria,
+          type: 'categoria',
+          children
+        };
+      });
+
+      setTreeDataModelo(treeItems);
       
       // Busca as categorias associadas ao modelo
       try {
@@ -367,7 +481,7 @@ function Frases() {
 
       // Só inclui o modelo_laudo se o checkbox não estiver marcado e houver um modelo selecionado
       if (!naoAssociarModelo && modeloId) {
-        dadosFrase.modelo_laudo = parseInt(modeloId);
+        dadosFrase.modelos_laudo = [parseInt(modeloId)];
       }
 
       let response;
@@ -422,7 +536,7 @@ function Frases() {
       };
 
       if (modeloId) {
-        dadosFrase.modelo_laudo = parseInt(modeloId);
+        dadosFrase.modelos_laudo = [parseInt(modeloId)];
       }
 
       const response = await api.put(`/api/frases/${fraseId}/`, dadosFrase);
@@ -474,6 +588,16 @@ function Frases() {
   };
 
   const handleClear = () => {
+    // Limpa estados do modelo
+    setMetodosModelo([]);
+    setTitulo('');
+    setTitulosDisponiveis([]);
+    setModeloId(null);
+    setTreeDataModelo([]);
+    setTreeDataSemMetodos([]);
+    setTreeData([]);
+
+    // Limpa estados das frases
     setCategoria('');
     setTituloFrase('');
     setFraseBase('');
@@ -482,10 +606,11 @@ function Frases() {
     setSubstituirPor('');
     setSubstituicoesOutras([]);
     setConclusao('');
-    setMetodosModelo([]);
     setFraseId(null);
-    setModeloId(null);
     setTexto('');
+    setCategoriasFiltradas([]);
+    setTitulosFiltrados([]);
+    setNaoAssociarModelo(false);
   };
 
   const handleEditarSubstituicao = (index) => {
@@ -508,7 +633,7 @@ function Frases() {
     const variavelFormatada = `{${variavel.tituloVariavel}}`;
     
     // Insere a variável na posição atual do cursor na frase base
-    const textareaElement = document.querySelector('textarea[name="fraseBase"]');
+    const textareaElement = document.querySelector('textarea[name="fraseBaseComModelo"]');
     if (textareaElement) {
       const start = textareaElement.selectionStart;
       const end = textareaElement.selectionEnd;
@@ -516,21 +641,19 @@ function Frases() {
       const novoTexto = textoAtual.substring(0, start) + variavelFormatada + textoAtual.substring(end);
       setFraseBase(novoTexto);
       
-      // Log para debug
-      console.log('Variável inserida:', variavelFormatada);
-      console.log('Texto atual:', novoTexto);
+      // Foca no textarea e posiciona o cursor após a variável inserida
+      setTimeout(() => {
+        textareaElement.focus();
+        textareaElement.setSelectionRange(start + variavelFormatada.length, start + variavelFormatada.length);
+      }, 0);
     } else {
       // Se não encontrar o textarea, adiciona ao final
-      const novoTexto = fraseBase + (fraseBase ? ' ' : '') + variavelFormatada;
-      setFraseBase(novoTexto);
-      
-      // Log para debug
-      console.log('Variável inserida ao final:', variavelFormatada);
-      console.log('Texto atual:', novoTexto);
+      setFraseBase(prev => prev + (prev ? ' ' : '') + variavelFormatada);
     }
     
     // Fecha o modal
     setModalAberto(false);
+    localStorage.removeItem('variavelHandler');
   };
 
   // Função para atualizar o título da variável em todas as frases
@@ -648,292 +771,642 @@ function Frases() {
     });
   };
 
+  // Função para limpar campos sem modelo
+  const handleClearSemModelo = () => {
+    setCategoriaSemModelo('');
+    setTituloFraseSemModelo('');
+    setFraseBaseSemModelo('');
+    setFraseIdSemModelo(null);
+    setCategoriasFiltradasSemModelo([]);
+    setTitulosFiltradosSemModelo([]);
+  };
+
+  // Função para salvar frase sem modelo
+  const handleSaveSemModelo = async () => {
+    try {
+      setSaving(true);
+
+      // Verifica se o token está presente
+      const token = localStorage.getItem(ACCESS_TOKEN);
+      if (!token) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // Decodifica o token para obter o ID do usuário
+      const decoded = jwtDecode(token);
+      if (!decoded || !decoded.user_id) {
+        throw new Error('Token inválido');
+      }
+
+      const dadosFrase = {
+        categoriaFrase: categoriaSemModelo.trim(),
+        tituloFrase: tituloFraseSemModelo.trim(),
+        frase: {
+          fraseBase: fraseBaseSemModelo.trim()
+        }
+      };
+
+      let response;
+      if (fraseIdSemModelo) {
+        // Se tem fraseId, é uma edição
+        response = await api.put(`/api/frases/${fraseIdSemModelo}/`, dadosFrase);
+      } else {
+        // Se não tem fraseId, é uma criação
+        response = await api.post('/api/frases/', dadosFrase);
+      }
+
+      if (response.status === 200 || response.status === 201) {
+        alert(fraseIdSemModelo ? 'Frase atualizada com sucesso!' : 'Frase salva com sucesso!');
+        
+        // Atualiza a lista de frases
+        const frasesResponse = await api.get('/api/frases/');
+        setFrases(frasesResponse.data);
+        
+        // Limpa os campos
+        handleClearSemModelo();
+      }
+    } catch (error) {
+      console.error('Erro ao salvar frase:', error);
+      if (error.message === 'Usuário não autenticado') {
+        alert('Sua sessão expirou. Por favor, faça login novamente.');
+        handleLogout();
+      } else if (error.response?.data) {
+        alert(`Erro ao salvar frase: ${JSON.stringify(error.response.data)}`);
+      } else {
+        alert('Erro ao salvar frase. Por favor, tente novamente.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Função para editar frase sem modelo
+  const handleEditSemModelo = async () => {
+    if (!fraseIdSemModelo) return;
+
+    try {
+      setSaving(true);
+      const dadosFrase = {
+        categoriaFrase: categoriaSemModelo.trim(),
+        tituloFrase: tituloFraseSemModelo.trim(),
+        frase: {
+          fraseBase: fraseBaseSemModelo.trim()
+        }
+      };
+
+      const response = await api.put(`/api/frases/${fraseIdSemModelo}/`, dadosFrase);
+
+      if (response.status === 200) {
+        // Atualiza a lista de frases
+        const frasesResponse = await api.get('/api/frases/');
+        setFrases(frasesResponse.data);
+        
+        alert('Frase atualizada com sucesso!');
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar frase:', error);
+      if (error.response?.data) {
+        alert(`Erro ao atualizar frase: ${JSON.stringify(error.response.data)}`);
+      } else {
+        alert('Erro ao atualizar frase. Por favor, tente novamente.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Função para excluir frase sem modelo
+  const handleDeleteSemModelo = async () => {
+    if (!fraseIdSemModelo) return;
+    
+    if (!window.confirm('Tem certeza que deseja excluir esta frase?')) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.delete(`/api/frases/${fraseIdSemModelo}/`);
+      
+      // Atualiza a lista de frases
+      const response = await api.get('/api/frases/');
+      setFrases(response.data);
+      
+      // Limpa o formulário
+      handleClearSemModelo();
+      
+      alert('Frase excluída com sucesso!');
+    } catch (error) {
+      console.error('Erro ao excluir frase:', error);
+      alert('Erro ao excluir frase. Por favor, tente novamente.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Função para manipular mudança de categoria sem modelo
+  const handleCategoriaSemModeloChange = async (newValue) => {
+    try {
+      setCategoriaSemModelo(newValue);
+      
+      if (!newValue) {
+        setTitulosFiltradosSemModelo([]);
+        setTituloFraseSemModelo('');
+        return;
+      }
+
+      const response = await api.get('/api/frases/titulos_frases/', {
+        params: { categoria: newValue }
+      });
+      
+      if (response.data && Array.isArray(response.data.titulos_frases)) {
+        setTitulosFiltradosSemModelo(response.data.titulos_frases);
+        setTituloFraseSemModelo('');
+      } else {
+        console.error('Resposta inválida do servidor:', response.data);
+        setTitulosFiltradosSemModelo([]);
+      }
+      
+    } catch (error) {
+      console.error('Erro ao buscar títulos:', error);
+      setTitulosFiltradosSemModelo([]);
+      setTituloFraseSemModelo('');
+    }
+  };
+
+  // Função para manipular seleção de título da frase sem modelo
+  const handleTituloFraseSemModeloSelect = async (selectedTitulo) => {
+    try {
+      setTituloFraseSemModelo(selectedTitulo);
+      
+      const response = await api.get('/api/frases/', {
+        params: {
+          titulo_frase: selectedTitulo,
+          categoria: categoriaSemModelo
+        }
+      });
+
+      if (response.data && response.data.length > 0) {
+        const frase = response.data[0];
+        console.log('Frase encontrada:', frase);
+        
+        setFraseIdSemModelo(frase.id);
+        setFraseBaseSemModelo(frase.frase.fraseBase || '');
+      } else {
+        console.log('Frase não encontrada');
+        setFraseBaseSemModelo('');
+        setFraseIdSemModelo(null);
+      }
+    } catch (error) {
+      console.error('Erro ao selecionar título:', error);
+      setFraseBaseSemModelo('');
+      setFraseIdSemModelo(null);
+    }
+  };
+
+  // Função para inserir variável na frase sem modelo
+  const handleVariavelSelectSemModelo = (variavel) => {
+    const variavelFormatada = `{${variavel.tituloVariavel}}`;
+    
+    const textareaElement = document.querySelector('textarea[name="fraseBaseSemModelo"]');
+    if (textareaElement) {
+      const start = textareaElement.selectionStart;
+      const end = textareaElement.selectionEnd;
+      const textoAtual = fraseBaseSemModelo;
+      const novoTexto = textoAtual.substring(0, start) + variavelFormatada + textoAtual.substring(end);
+      setFraseBaseSemModelo(novoTexto);
+      
+      // Foca no textarea e posiciona o cursor após a variável inserida
+      setTimeout(() => {
+        textareaElement.focus();
+        textareaElement.setSelectionRange(start + variavelFormatada.length, start + variavelFormatada.length);
+      }, 0);
+    } else {
+      // Se não encontrar o textarea, adiciona ao final
+      setFraseBaseSemModelo(prev => prev + (prev ? ' ' : '') + variavelFormatada);
+    }
+    
+    setModalAberto(false);
+    localStorage.removeItem('variavelHandler');
+  };
+
   return (
     <Layout>
       <Grid gutter="md">
         {/* Coluna da Esquerda */}
         <Grid.Col span={6}>
-          <Stack spacing="md">
-            <Divider label="Selecione o Método para Filtrar Modelos" labelPosition="center" my="md" />
-            <MetodosSelect
-              value={metodosModelo}
-              onChange={handleMetodosModeloChange}
-              label="Método do Modelo"
-            />
+          <Tabs defaultValue="frases-modelo">
+            <Tabs.List>
+              <Tabs.Tab value="frases-modelo">Frases Associadas a Modelo</Tabs.Tab>
+              <Tabs.Tab value="frases-sem-modelo">Frases sem Modelo Associado</Tabs.Tab>
+            </Tabs.List>
 
-            <TituloCombobox
-              value={titulo}
-              onChange={setTitulo}
-              metodosSelected={metodosModelo}
-              onTituloSelect={handleTituloSelect}
-              titulosDisponiveis={titulosDisponiveis}
-              setTitulosDisponiveis={setTitulosDisponiveis}
-            />
+            <Tabs.Panel value="frases-modelo" pt="xs">
+              <Stack spacing="md">
+                <Divider label="Selecione o Método para Filtrar Modelos" labelPosition="center" my="md" />
+                <MetodosSelect
+                  value={metodosModelo}
+                  onChange={handleMetodosModeloChange}
+                  label="Método do Modelo"
+                />
 
-            <Divider label="Configurações de Frases" labelPosition="center" my="md" />
+                <TituloCombobox
+                  value={titulo}
+                  onChange={setTitulo}
+                  metodosSelected={metodosModelo}
+                  onTituloSelect={handleTituloSelect}
+                  titulosDisponiveis={titulosDisponiveis}
+                  setTitulosDisponiveis={setTitulosDisponiveis}
+                />
 
-            {/* Combobox Categoria */}
-            <Combobox
-              store={comboboxCategoria}
-              onOptionSubmit={(val) => {
-                handleCategoriaChange(val);
-                comboboxCategoria.closeDropdown();
-              }}
-            >
-              <Combobox.Target>
-                <Input.Wrapper label="Categoria" required>
-                  <Input
-                    placeholder="Selecione a categoria"
-                    value={categoria}
-                    onChange={(event) => handleCategoriaChange(event.currentTarget.value)}
-                    onClick={() => comboboxCategoria.openDropdown()}
-                    rightSection={<Combobox.Chevron />}
-                  />
-                </Input.Wrapper>
-              </Combobox.Target>
+                <Divider label="Configurações de Frases" labelPosition="center" my="md" />
 
-              <Combobox.Dropdown>
-                <Combobox.Options>
-                  {Array.isArray(categoriasFiltradas) && categoriasFiltradas.map((group) => (
-                    <Combobox.Group key={group.group} label={group.group}>
-                      {group.items.map((item) => (
-                        <Combobox.Option key={item.value} value={item.value}>
-                          {item.label}
+                {/* Combobox Categoria */}
+                <Combobox
+                  store={comboboxCategoria}
+                  onOptionSubmit={(val) => {
+                    handleCategoriaChange(val);
+                    comboboxCategoria.closeDropdown();
+                  }}
+                >
+                  <Combobox.Target>
+                    <Input.Wrapper label="Categoria" required>
+                      <Input
+                        placeholder="Selecione a categoria"
+                        value={categoria}
+                        onChange={(event) => handleCategoriaChange(event.currentTarget.value)}
+                        onClick={() => comboboxCategoria.openDropdown()}
+                        rightSection={<Combobox.Chevron />}
+                      />
+                    </Input.Wrapper>
+                  </Combobox.Target>
+
+                  <Combobox.Dropdown>
+                    <Combobox.Options>
+                      {Array.isArray(categoriasFiltradas) && categoriasFiltradas.map((group) => (
+                        <Combobox.Group key={group.group} label={group.group}>
+                          {group.items.map((item) => (
+                            <Combobox.Option key={item.value} value={item.value}>
+                              {item.label}
+                            </Combobox.Option>
+                          ))}
+                        </Combobox.Group>
+                      ))}
+                    </Combobox.Options>
+                  </Combobox.Dropdown>
+                </Combobox>
+
+                {/* Combobox Título da Frase */}
+                <Combobox
+                  store={comboboxTituloFrase}
+                  onOptionSubmit={(val) => {
+                    handleTituloFraseSelect(val);
+                    comboboxTituloFrase.closeDropdown();
+                  }}
+                >
+                  <Combobox.Target>
+                    <Input.Wrapper label="Título da Frase" required>
+                      <Input
+                        placeholder="Digite o título da frase"
+                        value={tituloFrase}
+                        onChange={(event) => setTituloFrase(event.currentTarget.value)}
+                        onClick={() => comboboxTituloFrase.openDropdown()}
+                        rightSection={<Combobox.Chevron />}
+                      />
+                    </Input.Wrapper>
+                  </Combobox.Target>
+
+                  <Combobox.Dropdown>
+                    <Combobox.Options>
+                      {titulosFiltrados.map((titulo) => (
+                        <Combobox.Option key={titulo} value={titulo}>
+                          {titulo}
                         </Combobox.Option>
                       ))}
-                    </Combobox.Group>
-                  ))}
-                </Combobox.Options>
-              </Combobox.Dropdown>
-            </Combobox>
+                    </Combobox.Options>
+                  </Combobox.Dropdown>
+                </Combobox>
 
-            {/* Combobox Título da Frase */}
-            <Combobox
-              store={comboboxTituloFrase}
-              onOptionSubmit={(val) => {
-                handleTituloFraseSelect(val);
-                comboboxTituloFrase.closeDropdown();
-              }}
-            >
-              <Combobox.Target>
-                <Input.Wrapper label="Título da Frase" required>
-                  <Input
-                    placeholder="Digite o título da frase"
-                    value={tituloFrase}
-                    onChange={(event) => setTituloFrase(event.currentTarget.value)}
-                    onClick={() => comboboxTituloFrase.openDropdown()}
-                    rightSection={<Combobox.Chevron />}
-                  />
-                </Input.Wrapper>
-              </Combobox.Target>
-
-              <Combobox.Dropdown>
-                <Combobox.Options>
-                  {titulosFiltrados.map((titulo) => (
-                    <Combobox.Option key={titulo} value={titulo}>
-                      {titulo}
-                    </Combobox.Option>
-                  ))}
-                </Combobox.Options>
-              </Combobox.Dropdown>
-            </Combobox>
-
-            {/* Input Multilinha Frase Base */}
-            <Input.Wrapper 
-              label="Frase Base" 
-              description="Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas." 
-              required
-            >
-              <Textarea
-                name="fraseBase"
-                placeholder="Digite a frase base"                
-                value={fraseBase}
-                onChange={(event) => setFraseBase(event.currentTarget.value)}
-                minRows={3}
-                autosize
-                maxRows={10}
-                styles={{
-                  input: {
-                    whiteSpace: 'pre-wrap'
-                  }
-                }}
-              />
-            </Input.Wrapper>
-
-            <Group justify="space-between" align="center" mt="md">
-              <Tooltip
-                label="Quando marcado, esta frase não será associada ao modelo de laudo selecionado acima. Ela ficará disponível para uso em qualquer modelo, como uma frase de uso geral."
-                multiline
-                width={300}
-                withArrow
-              >
-                <div>
-                  <Switch
-                    label="Não associar essa frase ao modelo escolhido"
-                    checked={naoAssociarModelo}
-                    onChange={(event) => setNaoAssociarModelo(event.currentTarget.checked)}
-                    color="violet"
-                    size="md"
+                {/* Input Multilinha Frase Base */}
+                <Input.Wrapper 
+                  label="Frase Base" 
+                  description="Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas." 
+                  required
+                >
+                  <Textarea
+                    name="fraseBaseComModelo"
+                    placeholder="Digite a frase base"                
+                    value={fraseBase}
+                    onChange={(event) => setFraseBase(event.currentTarget.value)}
+                    minRows={3}
+                    autosize
+                    maxRows={10}
                     styles={{
-                      track: {
-                        backgroundColor: naoAssociarModelo ? 'var(--mantine-color-violet-6)' : undefined,
-                      },
-                      label: {
-                        fontWeight: 500,
-                        color: 'var(--mantine-color-red-6)',
+                      input: {
+                        whiteSpace: 'pre-wrap'
                       }
                     }}
                   />
-                </div>
-              </Tooltip>
+                </Input.Wrapper>
 
-              <Button 
-                variant="light" 
-                color="blue"
-                leftSection={<IconVariable size={20} />}
-                onClick={() => setModalAberto(true)}
-              >
-                Inserir Variável
-              </Button>
-            </Group>
+                <Group justify="flex-end" align="center" mt="md">
+                  <Button 
+                    variant="light" 
+                    color="blue"
+                    leftSection={<IconVariable size={20} />}
+                    onClick={() => {
+                      setModalAberto(true);
+                      localStorage.setItem('variavelHandler', 'comModelo');
+                    }}
+                  >
+                    Inserir Variável
+                  </Button>
+                </Group>
 
-            <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
-              <Input
-                placeholder="Digite o texto a ser substituído"                  
-                value={substituicaoFraseBase}
-                onChange={(event) => setSubstituicaoFraseBase(event.currentTarget.value)}                  
-              />
-            </Input.Wrapper>
+                <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
+                  <Input
+                    placeholder="Digite o texto a ser substituído"                  
+                    value={substituicaoFraseBase}
+                    onChange={(event) => setSubstituicaoFraseBase(event.currentTarget.value)}                  
+                  />
+                </Input.Wrapper>
 
-            <Divider label="Outras substituições a serem feitas no laudo (opcional)" labelPosition="center" my="md" />              
+                <Divider label="Outras substituições a serem feitas no laudo (opcional)" labelPosition="center" my="md" />              
 
-            {/* Input Procurar Por */}
-            <Input.Wrapper label="Procurar Por">
-              <Input
-                placeholder="Digite o texto a ser procurado"
-                value={procurarPor}
-                onChange={(event) => setProcurarPor(event.currentTarget.value)}
-              />
-            </Input.Wrapper>
+                {/* Input Procurar Por */}
+                <Input.Wrapper label="Procurar Por">
+                  <Input
+                    placeholder="Digite o texto a ser procurado"
+                    value={procurarPor}
+                    onChange={(event) => setProcurarPor(event.currentTarget.value)}
+                  />
+                </Input.Wrapper>
 
-            {/* Input Substituir Por */}
-            <Input.Wrapper label="Substituir Por">
-              <Input
-                placeholder="Digite o texto para substituição"
-                value={substituirPor}
-                onChange={(event) => setSubstituirPor(event.currentTarget.value)}
-              />
-            </Input.Wrapper>
+                {/* Input Substituir Por */}
+                <Input.Wrapper label="Substituir Por">
+                  <Input
+                    placeholder="Digite o texto para substituição"
+                    value={substituirPor}
+                    onChange={(event) => setSubstituirPor(event.currentTarget.value)}
+                  />
+                </Input.Wrapper>
 
-            {/* Botão adicionar substituição */}
-            <Group justify="flex-end" mt="md">
-              <Button 
-                color="blue" 
-                onClick={handleCriarSubstituicao}
-                loading={saving}
-                leftSection={<IconDeviceFloppy size={20} />}
-                disabled={!procurarPor.trim()}
-              >
-                Adicionar Substituição
-              </Button>         
-            </Group>
+                {/* Botão adicionar substituição */}
+                <Group justify="flex-end" mt="md">
+                  <Button 
+                    color="blue" 
+                    onClick={handleCriarSubstituicao}
+                    loading={saving}
+                    leftSection={<IconDeviceFloppy size={20} />}
+                    disabled={!procurarPor.trim()}
+                  >
+                    Adicionar Substituição
+                  </Button>         
+                </Group>
 
-            {/* Lista de substituições */}
-            {substituicoesOutras.length > 0 && (
-              <Stack spacing="xs" mt="md">
-                <Text size="sm" fw={500}>Substituições adicionadas:</Text>
-                {substituicoesOutras.map((sub, index) => (
-                  <div key={index} style={{ 
-                    padding: '8px', 
-                    backgroundColor: '#f8f9fa', 
-                    borderRadius: '4px',
-                    border: '1px solid #dee2e6'
-                  }}>
-                    <Group justify="space-between" align="flex-start">
-                      <Stack spacing="xs" style={{ flex: 1 }}>
-                        <Text size="sm">
-                          <strong>Procurar por:</strong> {sub.procurarPor}
-                        </Text>
-                        <Text size="sm">
-                          <strong>Substituir por:</strong> {sub.substituirPor}
-                        </Text>
-                      </Stack>
-                      <Group gap="xs">
-                        <Button
-                          variant="subtle"
-                          color="blue"
-                          size="xs"
-                          onClick={() => handleEditarSubstituicao(index)}
-                          leftSection={<IconEdit size={14} />}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          variant="subtle"
-                          color="red"
-                          size="xs"
-                          onClick={() => handleDeletarSubstituicao(index)}
-                          leftSection={<IconTrash size={14} />}
-                        >
-                          Excluir
-                        </Button>
-                      </Group>
-                    </Group>
-                  </div>
-                ))}
+                {/* Lista de substituições */}
+                {substituicoesOutras.length > 0 && (
+                  <Stack spacing="xs" mt="md">
+                    <Text size="sm" fw={500}>Substituições adicionadas:</Text>
+                    {substituicoesOutras.map((sub, index) => (
+                      <div key={index} style={{ 
+                        padding: '8px', 
+                        backgroundColor: '#f8f9fa', 
+                        borderRadius: '4px',
+                        border: '1px solid #dee2e6'
+                      }}>
+                        <Group justify="space-between" align="flex-start">
+                          <Stack spacing="xs" style={{ flex: 1 }}>
+                            <Text size="sm">
+                              <strong>Procurar por:</strong> {sub.procurarPor}
+                            </Text>
+                            <Text size="sm">
+                              <strong>Substituir por:</strong> {sub.substituirPor}
+                            </Text>
+                          </Stack>
+                          <Group gap="xs">
+                            <Button
+                              variant="subtle"
+                              color="blue"
+                              size="xs"
+                              onClick={() => handleEditarSubstituicao(index)}
+                              leftSection={<IconEdit size={14} />}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              variant="subtle"
+                              color="red"
+                              size="xs"
+                              onClick={() => handleDeletarSubstituicao(index)}
+                              leftSection={<IconTrash size={14} />}
+                            >
+                              Excluir
+                            </Button>
+                          </Group>
+                        </Group>
+                      </div>
+                    ))}
+                  </Stack>
+                )}
+
+                <Divider label="Conclusão (opcional)" labelPosition="center" my="md" />
+
+                {/* Input Conclusão */}
+                <Textarea
+                  label="Conclusão"
+                  placeholder="Digite a conclusão"
+                  value={conclusao}
+                  onChange={(event) => setConclusao(event.currentTarget.value)}
+                  minRows={2}
+                  autosize
+                />
+
+                {/* Botões */}
+                <Group justify="flex-end" mt="md">
+                  <Button 
+                    color="blue" 
+                    onClick={handleSave}
+                    loading={saving}
+                    leftSection={<IconDeviceFloppy size={20} />}
+                    disabled={!categoria.trim() || !tituloFrase.trim() || !fraseBase.trim()}
+                  >
+                    {saving ? 'Salvando...' : 'Salvar'}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    color="blue"
+                    onClick={handleEdit}
+                    leftSection={<IconEdit size={20} />}
+                    disabled={!fraseId}
+                  >
+                    Editar
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    color="red"
+                    onClick={handleDelete}
+                    leftSection={<IconTrash size={20} />}
+                    disabled={!fraseId}
+                  >
+                    Excluir
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleClear}
+                    leftSection={<IconEraser size={20} />}
+                  >
+                    Limpar
+                  </Button>
+                </Group>
               </Stack>
-            )}
+            </Tabs.Panel>
 
-            <Divider label="Conclusão (opcional)" labelPosition="center" my="md" />
+            <Tabs.Panel value="frases-sem-modelo" pt="xs">
+              <Stack spacing="md">
+                <Divider label="Frases sem Modelo Associado" labelPosition="center" my="md" />
 
-            {/* Input Conclusão */}
-            <Textarea
-              label="Conclusão"
-              placeholder="Digite a conclusão"
-              value={conclusao}
-              onChange={(event) => setConclusao(event.currentTarget.value)}
-              minRows={2}
-              autosize
-            />
+                {/* Combobox Categoria */}
+                <Combobox
+                  store={comboboxCategoriaSemModelo}
+                  onOptionSubmit={(val) => {
+                    handleCategoriaSemModeloChange(val);
+                    comboboxCategoriaSemModelo.closeDropdown();
+                  }}
+                >
+                  <Combobox.Target>
+                    <Input.Wrapper label="Categoria" required>
+                      <Input
+                        placeholder="Selecione a categoria"
+                        value={categoriaSemModelo}
+                        onChange={(event) => handleCategoriaSemModeloChange(event.currentTarget.value)}
+                        onClick={() => comboboxCategoriaSemModelo.openDropdown()}
+                        rightSection={<Combobox.Chevron />}
+                      />
+                    </Input.Wrapper>
+                  </Combobox.Target>
 
-            {/* Botões */}
-            <Group justify="flex-end" mt="md">
-              <Button 
-                color="blue" 
-                onClick={handleSave}
-                loading={saving}
-                leftSection={<IconDeviceFloppy size={20} />}
-                disabled={!categoria.trim() || !tituloFrase.trim() || !fraseBase.trim()}
-              >
-                {saving ? 'Salvando...' : 'Salvar'}
-              </Button>
-              <Button 
-                variant="outline" 
-                color="blue"
-                onClick={handleEdit}
-                leftSection={<IconEdit size={20} />}
-                disabled={!fraseId}
-              >
-                Editar
-              </Button>
-              <Button 
-                variant="outline" 
-                color="red"
-                onClick={handleDelete}
-                leftSection={<IconTrash size={20} />}
-                disabled={!fraseId}
-              >
-                Excluir
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleClear}
-                leftSection={<IconEraser size={20} />}
-              >
-                Limpar
-              </Button>
-            </Group>
-          </Stack>
+                  <Combobox.Dropdown>
+                    <Combobox.Options>
+                      {Array.isArray(categoriasFiltradasSemModelo) && categoriasFiltradasSemModelo.map((group) => (
+                        <Combobox.Group key={group.group} label={group.group}>
+                          {group.items.map((item) => (
+                            <Combobox.Option key={item.value} value={item.value}>
+                              {item.label}
+                            </Combobox.Option>
+                          ))}
+                        </Combobox.Group>
+                      ))}
+                    </Combobox.Options>
+                  </Combobox.Dropdown>
+                </Combobox>
+
+                {/* Combobox Título da Frase */}
+                <Combobox
+                  store={comboboxTituloFraseSemModelo}
+                  onOptionSubmit={(val) => {
+                    handleTituloFraseSemModeloSelect(val);
+                    comboboxTituloFraseSemModelo.closeDropdown();
+                  }}
+                >
+                  <Combobox.Target>
+                    <Input.Wrapper label="Título da Frase" required>
+                      <Input
+                        placeholder="Digite o título da frase"
+                        value={tituloFraseSemModelo}
+                        onChange={(event) => setTituloFraseSemModelo(event.currentTarget.value)}
+                        onClick={() => comboboxTituloFraseSemModelo.openDropdown()}
+                        rightSection={<Combobox.Chevron />}
+                      />
+                    </Input.Wrapper>
+                  </Combobox.Target>
+
+                  <Combobox.Dropdown>
+                    <Combobox.Options>
+                      {titulosFiltradosSemModelo.map((titulo) => (
+                        <Combobox.Option key={titulo} value={titulo}>
+                          {titulo}
+                        </Combobox.Option>
+                      ))}
+                    </Combobox.Options>
+                  </Combobox.Dropdown>
+                </Combobox>
+
+                {/* Input Multilinha Frase Base */}
+                <Input.Wrapper 
+                  label="Frase Base" 
+                  description="Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas." 
+                  required
+                >
+                  <Textarea
+                    name="fraseBaseSemModelo"
+                    placeholder="Digite a frase base"                
+                    value={fraseBaseSemModelo}
+                    onChange={(event) => setFraseBaseSemModelo(event.currentTarget.value)}
+                    minRows={3}
+                    autosize
+                    maxRows={10}
+                    styles={{
+                      input: {
+                        whiteSpace: 'pre-wrap'
+                      }
+                    }}
+                  />
+                </Input.Wrapper>
+
+                <Group justify="flex-end" align="center" mt="md">
+                  <Button 
+                    variant="light" 
+                    color="blue"
+                    leftSection={<IconVariable size={20} />}
+                    onClick={() => {
+                      setModalAberto(true);
+                      localStorage.setItem('variavelHandler', 'semModelo');
+                    }}
+                  >
+                    Inserir Variável
+                  </Button>
+                </Group>
+
+                {/* Botões */}
+                <Group justify="flex-end" mt="md">
+                  <Button 
+                    color="blue" 
+                    onClick={handleSaveSemModelo}
+                    loading={saving}
+                    leftSection={<IconDeviceFloppy size={20} />}
+                    disabled={!categoriaSemModelo.trim() || !tituloFraseSemModelo.trim() || !fraseBaseSemModelo.trim()}
+                  >
+                    {saving ? 'Salvando...' : 'Salvar'}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    color="blue"
+                    onClick={handleEditSemModelo}
+                    leftSection={<IconEdit size={20} />}
+                    disabled={!fraseIdSemModelo}
+                  >
+                    Editar
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    color="red"
+                    onClick={handleDeleteSemModelo}
+                    leftSection={<IconTrash size={20} />}
+                    disabled={!fraseIdSemModelo}
+                  >
+                    Excluir
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleClearSemModelo}
+                    leftSection={<IconEraser size={20} />}
+                  >
+                    Limpar
+                  </Button>
+                </Group>
+              </Stack>
+            </Tabs.Panel>
+          </Tabs>
         </Grid.Col>
 
         {/* Coluna da Direita */}
@@ -949,11 +1422,23 @@ function Frases() {
       {/* Modal de Variáveis */}
       <Modal
         opened={modalAberto}
-        onClose={() => setModalAberto(false)}
+        onClose={() => {
+          setModalAberto(false);
+          localStorage.removeItem('variavelHandler');
+        }}
         title="Selecionar Variável"
         size="xl"
       >
-        <VariaveisModal onVariavelSelect={handleVariavelSelect} />
+        <VariaveisModal 
+          onVariavelSelect={(variavel) => {
+            const handler = localStorage.getItem('variavelHandler');
+            if (handler === 'semModelo') {
+              handleVariavelSelectSemModelo(variavel);
+            } else {
+              handleVariavelSelect(variavel);
+            }
+          }} 
+        />
       </Modal>
     </Layout>
   );

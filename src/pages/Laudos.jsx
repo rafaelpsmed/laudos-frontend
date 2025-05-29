@@ -217,15 +217,30 @@ function Laudos() {
         return;
       }
 
-      // Se a frase não tem substituição definida, abre o modal de confirmação
-      if (!frase.frase.substituicaoFraseBase) {
+      // Verifica se a frase tem substituição definida
+      if (frase.frase.substituicaoFraseBase) {
+        // Verifica se o texto atual contém a string de substituição
+        const editor = editorRef.current?.editor;
+        if (editor) {
+          const textoAtual = editor.getHTML();
+          if (textoAtual.includes(frase.frase.substituicaoFraseBase)) {
+            // Se encontrar, faz a substituição normalmente
+            await processarFrase(frase);
+          } else {
+            // Se não encontrar, abre o modal de inserção
+            setFraseTemporaria(frase);
+            setModalInserirFraseAberto(true);
+          }
+        } else {
+          // Se não tiver editor, abre o modal de inserção
+          setFraseTemporaria(frase);
+          setModalInserirFraseAberto(true);
+        }
+      } else {
+        // Se não tem substituição definida, abre o modal de inserção
         setFraseTemporaria(frase);
         setModalInserirFraseAberto(true);
-        return;
       }
-
-      // Se tem substituição, segue o fluxo normal
-      await processarFrase(frase);
 
     } catch (error) {
       console.error('Erro ao processar frase:', error);
