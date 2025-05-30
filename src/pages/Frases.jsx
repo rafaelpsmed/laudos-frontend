@@ -293,7 +293,7 @@ function Frases() {
       setTituloFrase(selectedTitulo);
       
       // Busca a frase usando a rota correta
-      const response = await api.get('/api/frases/', {
+      const response = await api.get('/api/frases/frases/', {
         params: {
           titulo_frase: selectedTitulo,
           categoria: categoria
