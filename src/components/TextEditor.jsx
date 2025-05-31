@@ -782,7 +782,7 @@ const TextEditor = forwardRef(({
                   localStorage.setItem('textoFraseBase', textoSelecionado);
                   
                   // Abre nova aba na página Frases
-                  window.open('/frases', '_blank');
+                  window.open('https://laudos-frontend-orpin.vercel.app/frases', '_blank');
                 }
                 setContextMenu({ visible: false, x: 0, y: 0 });
               }}
