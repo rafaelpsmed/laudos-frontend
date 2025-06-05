@@ -1428,6 +1428,12 @@ function Frases() {
         }}
         title="Selecionar Variável"
         size="xl"
+        styles={{
+          body: {
+            maxHeight: 'calc(90vh - 100px)',
+            overflowY: 'auto'
+          }
+        }}
       >
         <VariaveisModal 
           onVariavelSelect={(variavel) => {

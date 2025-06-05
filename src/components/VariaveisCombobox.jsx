@@ -74,7 +74,7 @@ function VariaveisCombobox({ value, onChange, label = "Variáveis" }) {
       </Combobox.Target>
 
       <Combobox.Dropdown>
-        <Combobox.Options>
+        <Combobox.Options style={{ maxHeight: '200px', overflowY: 'auto' }}>
           {variaveis
             .filter(variavel => 
               variavel.label.toLowerCase().includes(search.toLowerCase())
