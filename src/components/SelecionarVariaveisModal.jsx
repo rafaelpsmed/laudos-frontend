@@ -1,4 +1,4 @@
-import { Modal, Stack, Text, Checkbox, Group, Button, TextInput, Radio, Select, MultiSelect } from '@mantine/core';
+import { Modal, Stack, Text, Checkbox, Group, Button, TextInput, Radio, Select, MultiSelect, Divider } from '@mantine/core';
 import { useState, useEffect } from 'react';
 import api from '../api';
 import ComboboxAutocomplete from './componentesVariaveisModal/ComboboxAutocomplete';
@@ -232,8 +232,11 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, on
       <Stack>
         {/* Grupos de opções com radio buttons */}
         {gruposOpcoes && gruposOpcoes.map((grupo, index) => (
-          <Stack key={`grupo_${index}`}>
-            <Text size="sm" fw={500}>Selecione uma opção:</Text>
+          <Stack key={`grupo_${index}`} spacing="xs">
+            <Text size="sm" fw={500}>Grupo de opções {index + 1}:</Text>
+            <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+              {grupo.textoOriginal}
+            </Text>
             <Radio.Group
               value={opcoesRadio[`grupo_${index}`] || grupo.opcoes[0]}
               onChange={(value) => setOpcoesRadio(prev => ({
@@ -251,6 +254,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, on
                 ))}
               </Group>
             </Radio.Group>
+            <Divider my="xs" />
           </Stack>
         ))}
 
