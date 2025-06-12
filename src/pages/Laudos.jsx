@@ -28,6 +28,7 @@ function Laudos() {
   const [modalVariaveisAberto, setModalVariaveisAberto] = useState(false);
   const [modalInserirFraseAberto, setModalInserirFraseAberto] = useState(false);
   const [variaveisEncontradas, setVariaveisEncontradas] = useState([]);
+  const [gruposOpcoesEncontrados, setGruposOpcoesEncontrados] = useState([]);
   const [textoTemporario, setTextoTemporario] = useState('');
   const [fraseTemporaria, setFraseTemporaria] = useState(null);
   const [temTextoSelecionado, setTemTextoSelecionado] = useState(false);
@@ -426,17 +427,18 @@ function Laudos() {
       }
     }
 
-    // Procura por variáveis no texto
-    const variaveis = await buscarVariaveisNoTexto(novoTexto);
+    // Procura por variáveis e grupos de opções no texto
+    const { variaveis, gruposOpcoes } = await buscarVariaveisNoTexto(novoTexto);
     
-    // Se encontrou variáveis ou tem '$', guarda o texto temporariamente e abre o modal
-    if (variaveis.length > 0 || novoTexto.includes('$')) {
+    // Se encontrou variáveis, grupos de opções ou tem '$', guarda o texto temporariamente e abre o modal
+    if (variaveis.length > 0 || gruposOpcoes.length > 0 || novoTexto.includes('$')) {
       setTextoTemporario(novoTexto);
       setVariaveisEncontradas(variaveis);
+      setGruposOpcoesEncontrados(gruposOpcoes);
       setFraseTemporaria(frase);
       setModalVariaveisAberto(true);
     } else {
-      // Se não encontrou variáveis, atualiza o texto diretamente
+      // Se não encontrou variáveis nem grupos de opções, atualiza o texto diretamente
       setTexto(novoTexto);
     }
   };
@@ -511,36 +513,59 @@ function Laudos() {
         
         if (variavel && !variaveisEncontradas.some(v => v.id === variavel.id)) {
           variaveisEncontradas.push(variavel);
-        } else {
-          // Se não encontrou a variável, adiciona um log para debug
-          console.log('Variável não encontrada:', tituloVariavel);
-          console.log('Todas as variáveis disponíveis:', todasVariaveis.map(v => v.tituloVariavel));
         }
       }
+
+      // Encontra todas as ocorrências de opções com //
+      const regexOpcoes = /\b(\w+(?:\/\/\w+)+)\b/g;
+      let matchOpcoes;
+      const gruposOpcoes = [];
       
-      return variaveisEncontradas;
+      while ((matchOpcoes = regexOpcoes.exec(texto)) !== null) {
+        const grupoCompleto = matchOpcoes[1];
+        const opcoes = grupoCompleto.split('//');
+        
+        gruposOpcoes.push({
+          tipo: 'opcoes',
+          textoOriginal: grupoCompleto,
+          opcoes: opcoes,
+          posicao: matchOpcoes.index
+        });
+      }
+      
+      return {
+        variaveis: variaveisEncontradas,
+        gruposOpcoes: gruposOpcoes
+      };
     } catch (error) {
       console.error('Erro ao buscar variáveis:', error);
-      return [];
+      return {
+        variaveis: [],
+        gruposOpcoes: []
+      };
     }
   };
 
   const handleVariaveisSelecionadas = (valoresSelecionados) => {
     let textoFinal = textoTemporario;
   
-    // Função para escapar caracteres especiais
+    // Função para escapar caracteres especiais em regex
     const escapeRegExp = (string) => {
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
   
     // Substitui cada variável pelo valor selecionado
-    Object.entries(valoresSelecionados).forEach(([titulo, valor]) => {
-      if (titulo === '$') {
+    Object.entries(valoresSelecionados).forEach(([chave, valor]) => {
+      if (chave === '$') {
         // Substitui o caractere '$' diretamente
         textoFinal = textoFinal.replace('$', valor);
+      } else if (chave.includes('//')) {
+        // Se a chave contém //, é um grupo de opções
+        const regex = new RegExp(escapeRegExp(chave), 'g');
+        textoFinal = textoFinal.replace(regex, valor);
       } else {
-        // Usa regex com o título escapado para outras variáveis
-        const regex = new RegExp(`{${escapeRegExp(titulo)}}`, 'g');
+        // Para variáveis normais
+        const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
         textoFinal = textoFinal.replace(regex, valor);
       }
     });
@@ -1011,6 +1036,7 @@ function Laudos() {
         opened={modalVariaveisAberto}
         onClose={() => setModalVariaveisAberto(false)}
         variaveis={variaveisEncontradas}
+        gruposOpcoes={gruposOpcoesEncontrados}
         onConfirm={handleVariaveisSelecionadas}
         tituloFrase={tituloFraseAtual}
         temMedida={fraseTemporaria?.frase?.fraseBase?.includes('$') || textoTemporario?.includes('$')}

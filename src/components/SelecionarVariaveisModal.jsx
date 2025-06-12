@@ -3,10 +3,11 @@ import { useState, useEffect } from 'react';
 import api from '../api';
 import ComboboxAutocomplete from './componentesVariaveisModal/ComboboxAutocomplete';
 
-function SelecionarVariaveisModal({ opened, onClose, variaveis, onConfirm, tituloFrase, temMedida }) {
+function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, onConfirm, tituloFrase, temMedida }) {
   const [valoresSelecionados, setValoresSelecionados] = useState({});
   const [variaveisDetalhes, setVariaveisDetalhes] = useState([]);
   const [medida, setMedida] = useState('');
+  const [opcoesRadio, setOpcoesRadio] = useState({});
 
   // Função para salvar as escolhas no localStorage
   const salvarEscolhas = (valores) => {
@@ -72,6 +73,19 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, onConfirm, titul
     }
   }, [opened, variaveis]);
 
+  useEffect(() => {
+    if (opened) {
+      // Inicializa os estados dos radio buttons para cada grupo de opções
+      if (gruposOpcoes && gruposOpcoes.length > 0) {
+        const estadosIniciais = {};
+        gruposOpcoes.forEach((grupo, index) => {
+          estadosIniciais[`grupo_${index}`] = grupo.opcoes[0]; // Seleciona primeira opção por padrão
+        });
+        setOpcoesRadio(estadosIniciais);
+      }
+    }
+  }, [opened, gruposOpcoes]);
+
   const handleChange = (variavelId, valor) => {
     const novosValores = {
       ...valoresSelecionados,
@@ -118,6 +132,13 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, onConfirm, titul
     // Adiciona a medida ao resultado se existir
     if (temMedida && medida.trim()) {
       resultado['$'] = medida.trim();
+    }
+
+    // Adiciona as opções selecionadas dos grupos de radio
+    if (gruposOpcoes) {
+      gruposOpcoes.forEach((grupo, index) => {
+        resultado[grupo.textoOriginal] = opcoesRadio[`grupo_${index}`] || grupo.opcoes[0];
+      });
     }
 
     onConfirm(resultado);
@@ -205,34 +226,53 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, onConfirm, titul
     <Modal
       opened={opened}
       onClose={onClose}
-      title={tituloFrase || "Selecionar Valores das Variáveis"}
+      title={`Selecionar Valores${tituloFrase ? ` - ${tituloFrase}` : ''}`}
       size="lg"
     >
-      <Stack spacing="md">
+      <Stack>
+        {/* Grupos de opções com radio buttons */}
+        {gruposOpcoes && gruposOpcoes.map((grupo, index) => (
+          <Stack key={`grupo_${index}`}>
+            <Text size="sm" fw={500}>Selecione uma opção:</Text>
+            <Radio.Group
+              value={opcoesRadio[`grupo_${index}`] || grupo.opcoes[0]}
+              onChange={(value) => setOpcoesRadio(prev => ({
+                ...prev,
+                [`grupo_${index}`]: value
+              }))}
+            >
+              <Group mt="xs">
+                {grupo.opcoes.map((opcao) => (
+                  <Radio
+                    key={opcao}
+                    value={opcao}
+                    label={opcao}
+                  />
+                ))}
+              </Group>
+            </Radio.Group>
+          </Stack>
+        ))}
+
+        {/* Campo de medida */}
+        {temMedida && (
+          <TextInput
+            label="Medida"
+            value={medida}
+            onChange={(event) => setMedida(event.currentTarget.value)}
+            placeholder="Digite a medida"
+          />
+        )}
+
+        {/* Variáveis existentes */}
         {variaveisDetalhes.map((variavel) => (
           <div key={variavel.id}>
             {renderControle(variavel)}
           </div>
         ))}
-        
-        {temMedida && (
-          <TextInput
-            label="Medida"
-            placeholder="Digite a medida"
-            value={medida}
-            onChange={(event) => setMedida(event.currentTarget.value)}
-            required
-          />
-        )}
-        
-        <Group justify="flex-end" mt="md">
-          <Button variant="light" onClick={onClose}>Cancelar</Button>
-          <Button 
-            onClick={handleConfirm}
-            disabled={temMedida && !medida.trim()}
-          >
-            Confirmar
-          </Button>
+
+        <Group position="right" mt="md">
+          <Button onClick={handleConfirm}>Confirmar</Button>
         </Group>
       </Stack>
     </Modal>
