@@ -501,32 +501,29 @@ function Laudos() {
       const response = await api.get('/api/variaveis/');
       const todasVariaveis = response.data;
       
-      // Encontra todas as ocorrências de {variavel} que não são grupos de opções
+      // Encontra todas as ocorrências de {variavel}
       const variaveisEncontradas = [];
-      const regexVariaveis = /{([^}/]+)}/g;
+      const regexVariaveis = /{([^}]+)}/g;
       let match;
       
       while ((match = regexVariaveis.exec(texto)) !== null) {
-        const conteudo = match[1];
-        // Verifica se não é um grupo de opções (não contém //)
-        if (!conteudo.includes('//')) {
-          // Procura a variável pelo título exato
-          const variavel = todasVariaveis.find(v => v.tituloVariavel === conteudo);
-          
-          if (variavel && !variaveisEncontradas.some(v => v.id === variavel.id)) {
-            variaveisEncontradas.push(variavel);
-          }
+        const tituloVariavel = match[1];
+        // Procura a variável pelo título exato
+        const variavel = todasVariaveis.find(v => v.tituloVariavel === tituloVariavel);
+        
+        if (variavel && !variaveisEncontradas.some(v => v.id === variavel.id)) {
+          variaveisEncontradas.push(variavel);
         }
       }
 
-      // Encontra todas as ocorrências de grupos de opções {op1//op2//op3}
-      const regexOpcoes = /{([^}]+\/\/[^}]+)}/g;
+      // Encontra todas as ocorrências de grupos de opções [op1//op2//op3]
+      const regexOpcoes = /\[(([^\]]+)\/\/([^\]]+)(?:\/\/[^\]]+)*)\]/g;
       let matchOpcoes;
       const gruposOpcoes = [];
       
       while ((matchOpcoes = regexOpcoes.exec(texto)) !== null) {
-        const grupoCompleto = matchOpcoes[0]; // Inclui os { }
-        const conteudoGrupo = matchOpcoes[1]; // Conteúdo entre { }
+        const grupoCompleto = matchOpcoes[0]; // Inclui os [ ]
+        const conteudoGrupo = matchOpcoes[1]; // Conteúdo entre [ ]
         const opcoes = conteudoGrupo.split('//').map(op => op.trim());
         
         gruposOpcoes.push({

@@ -234,7 +234,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, on
         {gruposOpcoes && gruposOpcoes.map((grupo, index) => (
           <Stack key={`grupo_${index}`} spacing="xs">
             <Text size="sm" fw={500}>Grupo de opções {index + 1}:</Text>
-            <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+            <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '4px 8px', borderRadius: '4px' }}>
               {grupo.textoOriginal}
             </Text>
             <Radio.Group
