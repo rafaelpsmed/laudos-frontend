@@ -1,5 +1,5 @@
 import Layout from '../components/Layout';
-import { Divider, Stack, Grid, Text, NavLink, Tooltip, Group, Button, Checkbox } from '@mantine/core';
+import { Divider, Stack, Grid, Text, NavLink, Tooltip, Group, Button, Checkbox, TextInput } from '@mantine/core';
 import { useState, useRef, useEffect } from 'react';
 import TextEditor from '../components/TextEditor';
 import MetodosSelect from '../components/MetodosSelect';
@@ -44,6 +44,9 @@ function Laudos() {
   const [treeDataOutroModelo, setTreeDataOutroModelo] = useState([]);
   const [metodosOutroModelo, setMetodosOutroModelo] = useState([]);
   const [titulosOutroModelo, setTitulosOutroModelo] = useState([]);
+  const [searchModeloFrases, setSearchModeloFrases] = useState('');
+  const [searchOutroModeloFrases, setSearchOutroModeloFrases] = useState('');
+  const [searchFrasesGerais, setSearchFrasesGerais] = useState('');
 
   const handleMetodosModeloChange = (newValue) => {
     setMetodosModelo(newValue);
@@ -546,8 +549,39 @@ function Laudos() {
     setModalVariaveisAberto(false);
   };
 
-  const renderTreeItems = (items) => {
-    return items.map((item) => {
+  const filterTreeItems = (items, searchTerm) => {
+    if (!searchTerm) return items;
+
+    return items.map(item => {
+      if (item.type === 'categoria') {
+        // Filtra os filhos da categoria
+        const filteredChildren = item.children?.filter(child =>
+          child.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+
+        // Se a categoria tem filhos filtrados ou o próprio nome da categoria corresponde à busca
+        if ((filteredChildren && filteredChildren.length > 0) || 
+            item.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+          return {
+            ...item,
+            children: filteredChildren
+          };
+        }
+        return null;
+      } else {
+        // Para itens que não são categorias, filtra pelo nome
+        if (item.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+          return item;
+        }
+        return null;
+      }
+    }).filter(Boolean); // Remove os itens null
+  };
+
+  const renderTreeItems = (items, searchTerm) => {
+    const filteredItems = filterTreeItems(items, searchTerm);
+    
+    return filteredItems.map((item) => {
       if (item.type === 'categoria') {
         return (
           <NavLink
@@ -556,7 +590,7 @@ function Laudos() {
             leftSection={<IconFolder size={16} />}
             childrenOffset={28}
           >
-            {item.children && renderTreeItems(item.children)}
+            {item.children && renderTreeItems(item.children, searchTerm)}
           </NavLink>
         );
       } else {
@@ -836,13 +870,21 @@ function Laudos() {
             {treeDataModelo.length > 0 && (
               <>
                 <Divider label="Frases do Modelo" labelPosition="center" my="md" />
+                <TextInput
+                  placeholder="Buscar frases do modelo..."
+                  value={searchModeloFrases}
+                  onChange={(event) => setSearchModeloFrases(event.currentTarget.value)}
+                  mb="sm"
+                />
                 <div style={{ 
                   border: '1px solid #dee2e6', 
                   borderRadius: '4px', 
                   padding: '10px',
-                  backgroundColor: '#f8f9fa'
+                  backgroundColor: '#f8f9fa',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
                 }}>
-                  {renderTreeItems(treeDataModelo)}
+                  {renderTreeItems(treeDataModelo, searchModeloFrases)}
                 </div>
               </>
             )}
@@ -866,24 +908,42 @@ function Laudos() {
             />
 
             {treeDataOutroModelo.length > 0 && (
-              <div style={{ 
-                border: '1px solid #dee2e6', 
-                borderRadius: '4px', 
-                padding: '10px',
-                backgroundColor: '#f8f9fa'
-              }}>
-                {renderTreeItems(treeDataOutroModelo)}
-              </div>
+              <>
+                <TextInput
+                  placeholder="Buscar frases de outros modelos..."
+                  value={searchOutroModeloFrases}
+                  onChange={(event) => setSearchOutroModeloFrases(event.currentTarget.value)}
+                  mb="sm"
+                />
+                <div style={{ 
+                  border: '1px solid #dee2e6', 
+                  borderRadius: '4px', 
+                  padding: '10px',
+                  backgroundColor: '#f8f9fa',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}>
+                  {renderTreeItems(treeDataOutroModelo, searchOutroModeloFrases)}
+                </div>
+              </>
             )}
 
             <Divider label="Frases Gerais, não associadas a nenhum Modelo" labelPosition="center" my="md" />
+            <TextInput
+              placeholder="Buscar frases gerais..."
+              value={searchFrasesGerais}
+              onChange={(event) => setSearchFrasesGerais(event.currentTarget.value)}
+              mb="sm"
+            />
             <div style={{ 
               border: '1px solid #dee2e6', 
               borderRadius: '4px', 
               padding: '10px',
-              backgroundColor: '#f8f9fa'
+              backgroundColor: '#f8f9fa',
+              maxHeight: '300px',
+              overflowY: 'auto'
             }}>
-              {renderTreeItems(treeDataSemMetodos)}
+              {renderTreeItems(treeDataSemMetodos, searchFrasesGerais)}
             </div>
 
           </Stack>

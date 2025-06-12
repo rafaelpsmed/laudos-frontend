@@ -500,7 +500,7 @@ function Frases() {
         const frasesResponse = await api.get('/api/frases/');
         setFrases(frasesResponse.data);
         
-        // Limpa os campos
+        // Limpa apenas os campos da frase, mantendo o modelo
         handleClear();
       }
     } catch (error) {
@@ -588,16 +588,7 @@ function Frases() {
   };
 
   const handleClear = () => {
-    // Limpa estados do modelo
-    setMetodosModelo([]);
-    setTitulo('');
-    setTitulosDisponiveis([]);
-    setModeloId(null);
-    setTreeDataModelo([]);
-    setTreeDataSemMetodos([]);
-    setTreeData([]);
-
-    // Limpa estados das frases
+    // Limpa apenas estados das frases
     setCategoria('');
     setTituloFrase('');
     setFraseBase('');
@@ -607,9 +598,6 @@ function Frases() {
     setSubstituicoesOutras([]);
     setConclusao('');
     setFraseId(null);
-    setTexto('');
-    setCategoriasFiltradas([]);
-    setTitulosFiltrados([]);
     setNaoAssociarModelo(false);
   };
 
