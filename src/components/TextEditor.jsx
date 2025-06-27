@@ -103,7 +103,8 @@ const TextEditor = forwardRef(({
       // Regex para encontrar 3 números consecutivos em qualquer lugar do texto
       //const regex = /(\d+(?:\.|,\d+)?)(?:\s+|\s*por\s+)(\d+(?:\.|,\d+)?)(?:\s+|\s*por\s+)(\d+(?:\.|,\d+)?)\s{2}/g;
 
-      const regex = /(?<N1>\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(?<N2>\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(?<N3>\d+(?:[.,]\d+)?)/g;
+      //const regex = /(?<N1>\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(?<N2>\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(?<N3>\d+(?:[.,]\d+)?)/g;
+      const regex = /(\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(\d+(?:[.,]\d+)?)/g;
 
       // Verifica se há 3 números consecutivos no texto
       const match = regex.exec(text);
