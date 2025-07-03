@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { jwtDecode } from "jwt-decode";
 import { ACCESS_TOKEN } from '../constants';
 import TextEditor from '../components/TextEditor';
+import VariaveisModal from '../components/VariaveisModal';
 import api from '../api';
 import Layout from '../components/Layout';
 
@@ -21,6 +22,7 @@ function ModeloLaudo() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [frasesVinculadas, setFrasesVinculadas] = useState([]);
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
+  const [modalVariaveisAberto, setModalVariaveisAberto] = useState(false);
   const navigate = useNavigate();
   const combobox = useCombobox();
   const editorRef = useRef(null);
@@ -326,6 +328,23 @@ function ModeloLaudo() {
     setMetodosSelected([]);
   };
 
+  const handleVariavelSelect = (variavel) => {
+    // Formata a variável para inserção
+    const variavelFormatada = `{${variavel.tituloVariavel}}`;
+    
+    // Insere a variável no editor de texto
+    if (editorRef.current && editorRef.current.editor) {
+      const { from } = editorRef.current.editor.state.selection;
+      editorRef.current.editor.chain()
+        .focus()
+        .insertContentAt(from, variavelFormatada)
+        .run();
+    }
+    
+    // Fecha o modal
+    setModalVariaveisAberto(false);
+  };
+
   useEffect(() => {
     const fetchUserData = async () => {
       const token = localStorage.getItem(ACCESS_TOKEN);
@@ -400,6 +419,17 @@ function ModeloLaudo() {
 
         <Text fw={500} size="sm" required>Modelo de Laudo</Text>
         <Stack spacing="md">
+          <Group justify="flex-end" align="center">
+            <Button 
+              variant="light" 
+              color="blue"
+              leftSection={<IconVariable size={20} />}
+              onClick={() => setModalVariaveisAberto(true)}
+            >
+              Inserir Variável
+            </Button>
+          </Group>
+          
           <TextEditor
             content={texto}
             onChange={setTexto}
@@ -504,6 +534,22 @@ function ModeloLaudo() {
               </Button>
             </Group>
           </Stack>
+        </Modal>
+
+        {/* Modal de Variáveis */}
+        <Modal
+          opened={modalVariaveisAberto}
+          onClose={() => setModalVariaveisAberto(false)}
+          title="Selecionar Variável"
+          size="xl"
+          styles={{
+            body: {
+              maxHeight: 'calc(90vh - 100px)',
+              overflowY: 'auto'
+            }
+          }}
+        >
+          <VariaveisModal onVariavelSelect={handleVariavelSelect} />
         </Modal>
       </Stack>
     </Layout>

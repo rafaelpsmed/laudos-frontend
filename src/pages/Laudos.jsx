@@ -151,19 +151,32 @@ function Laudos() {
       let textoModelo = response.data.texto || '';
       const textoFormatado = typeof textoModelo === 'string' ? textoModelo : String(textoModelo);
       
-      // Procura por "impressão:" ou "conclusão:" no texto
-      const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
-      const match = textoFormatado.match(regex);
+      // Procura por variáveis e grupos de opções no texto do modelo
+      const { variaveis, gruposOpcoes } = await buscarVariaveisNoTexto(textoFormatado);
       
-      if (match) {
-        // Se encontrou, extrai a conclusão
-        const conclusao = match[1].trim();
-        setConclusaoDoModelo(conclusao);
-        setTexto(textoFormatado);
+      // Se encontrou variáveis, grupos de opções ou tem '$', guarda o texto temporariamente e abre o modal
+      if (variaveis.length > 0 || gruposOpcoes.length > 0 || textoFormatado.includes('$')) {
+        setTextoTemporario(textoFormatado);
+        setVariaveisEncontradas(variaveis);
+        setGruposOpcoesEncontrados(gruposOpcoes);
+        setFraseTemporaria(null); // Não é uma frase, é um modelo
+        setModalVariaveisAberto(true);
       } else {
-        // Se não encontrou, mantém o texto original e limpa a conclusão
-        setTexto(textoFormatado);
-        setConclusaoDoModelo('');
+        // Se não encontrou variáveis, processa normalmente
+        // Procura por "impressão:" ou "conclusão:" no texto
+        const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
+        const match = textoFormatado.match(regex);
+        
+        if (match) {
+          // Se encontrou, extrai a conclusão
+          const conclusao = match[1].trim();
+          setConclusaoDoModelo(conclusao);
+          setTexto(textoFormatado);
+        } else {
+          // Se não encontrou, mantém o texto original e limpa a conclusão
+          setTexto(textoFormatado);
+          setConclusaoDoModelo('');
+        }
       }
       
       setModeloId(modeloSelecionado.id);
@@ -571,7 +584,27 @@ function Laudos() {
       }
     });
   
-    setTexto(textoFinal);
+    // Se é um modelo (fraseTemporaria é null), processa como modelo
+    if (!fraseTemporaria) {
+      // Procura por "impressão:" ou "conclusão:" no texto processado
+      const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
+      const match = textoFinal.match(regex);
+      
+      if (match) {
+        // Se encontrou, extrai a conclusão
+        const conclusao = match[1].trim();
+        setConclusaoDoModelo(conclusao);
+        setTexto(textoFinal);
+      } else {
+        // Se não encontrou, mantém o texto original e limpa a conclusão
+        setTexto(textoFinal);
+        setConclusaoDoModelo('');
+      }
+    } else {
+      // Se é uma frase, processa normalmente
+      setTexto(textoFinal);
+    }
+    
     setModalVariaveisAberto(false);
   };
 

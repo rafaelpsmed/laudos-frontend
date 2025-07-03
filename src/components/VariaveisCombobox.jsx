@@ -38,23 +38,13 @@ function VariaveisCombobox({ value, onChange, label = "Variáveis" }) {
 
   const handleInputChange = (value) => {
     setSearch(value);
-    const searchTerm = value.toLowerCase();
-    const found = variaveis.find(v => v.label.toLowerCase() === searchTerm);
-    
-    if (found) {
-      onChange(found.dados);
-    } else {
-      // Se não encontrou, cria um novo objeto com o título digitado
-      onChange({
-        tituloVariavel: value,
-        id: null,
-        variavel: {
-          tipo: '',
-          valores: []
-        }
-      });
-    }
+    combobox.updateSelectedOptionIndex();
   };
+
+  // Filtra as variáveis baseado no texto de busca
+  const filteredVariaveis = variaveis.filter(variavel => 
+    variavel.label.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <Combobox
@@ -64,10 +54,11 @@ function VariaveisCombobox({ value, onChange, label = "Variáveis" }) {
       <Combobox.Target>
         <Input.Wrapper label={label}>
           <Input
-            placeholder="Digite ou selecione uma variável"
+            placeholder="Digite para buscar variáveis..."
             value={search || selectedVariavel?.label || ''}
             onChange={(event) => handleInputChange(event.currentTarget.value)}
             onClick={() => combobox.openDropdown()}
+            onFocus={() => combobox.openDropdown()}
             rightSection={<Combobox.Chevron />}
           />
         </Input.Wrapper>
@@ -75,15 +66,17 @@ function VariaveisCombobox({ value, onChange, label = "Variáveis" }) {
 
       <Combobox.Dropdown>
         <Combobox.Options style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          {variaveis
-            .filter(variavel => 
-              variavel.label.toLowerCase().includes(search.toLowerCase())
-            )
-            .map((variavel) => (
+          {filteredVariaveis.length > 0 ? (
+            filteredVariaveis.map((variavel) => (
               <Combobox.Option key={variavel.value} value={variavel.value}>
                 {variavel.label}
               </Combobox.Option>
-            ))}
+            ))
+          ) : (
+            <Combobox.Option value="" disabled>
+              Nenhuma variável encontrada
+            </Combobox.Option>
+          )}
           {search && !variaveis.find(v => v.label.toLowerCase() === search.toLowerCase()) && (
             <Combobox.Option value={search}>
               + Criar nova variável "{search}"

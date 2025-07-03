@@ -7,10 +7,14 @@ import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import FontFamily from '@tiptap/extension-font-family';
 import FontSize from 'tiptap-fontsize-extension';
-import { Select, Stack, Tooltip, Text, Paper, ActionIcon } from '@mantine/core';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import { Select, Stack, Tooltip, Text, Paper, ActionIcon, Modal, NumberInput, Button, Group } from '@mantine/core';
 import { useEffect, forwardRef, useImperativeHandle, useState, useRef } from 'react';
 import History from '@tiptap/extension-history';
-import { IconArrowBackUp, IconArrowForwardUp, IconMicrophone, IconMicrophoneOff, IconCopy, IconCut, IconClipboardCopy, IconBold, IconItalic, IconUnderline, IconStrikethrough, IconExclamationMark, IconLetterCase, IconLetterCaseLower, IconDeviceFloppy } from '@tabler/icons-react';
+import { IconArrowBackUp, IconArrowForwardUp, IconMicrophone, IconMicrophoneOff, IconCopy, IconCut, IconClipboardCopy, IconBold, IconItalic, IconUnderline, IconStrikethrough, IconExclamationMark, IconLetterCase, IconLetterCaseLower, IconDeviceFloppy, IconTable, IconTrash, IconArrowRight } from '@tabler/icons-react';
 
 // Função para pluralizar palavras
 import pluralize from '../utils/pluralizar';
@@ -32,7 +36,57 @@ const editorStyles = {
   },
   '.ProseMirror p span[style*="font-size"]': {
     fontSize: 'inherit !important',
-  }
+  },
+  // Estilos para tabelas
+  '.ProseMirror table': {
+    borderCollapse: 'collapse',
+    tableLayout: 'fixed',
+    width: '100%',
+    margin: '1em 0',
+    overflow: 'hidden',
+    border: '1px solid #000',
+  },
+  '.ProseMirror td, .ProseMirror th': {
+    border: '1px solid #000',
+    padding: '8px 12px',
+    position: 'relative',
+    minWidth: '1em',
+    wordBreak: 'break-word',
+    verticalAlign: 'top',
+  },
+  '.ProseMirror th': {
+    fontWeight: 'bold',
+    backgroundColor: '#f8f9fa',
+    textAlign: 'center',
+    border: '1px solid #000',
+  },
+  '.ProseMirror .selectedCell:after': {
+    zIndex: 2,
+    position: 'absolute',
+    content: '""',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    background: 'rgba(200, 200, 255, 0.4)',
+    pointerEvents: 'none',
+  },
+  '.ProseMirror .column-resize-handle': {
+    backgroundColor: '#adf',
+    bottom: '-2px',
+    position: 'absolute',
+    right: '-2px',
+    pointerEvents: 'none',
+    top: 0,
+    width: '4px',
+  },
+  '.ProseMirror table p': {
+    margin: 0,
+  },
+  '.ProseMirror .resize-cursor': {
+    cursor: 'ew-resize',
+    cursor: 'col-resize',
+  },
 };
 
 const TextEditor = forwardRef(({ 
@@ -50,7 +104,13 @@ const TextEditor = forwardRef(({
   const [previewText, setPreviewText] = useState('');
   const [ultimaPosicaoDolar, setUltimaPosicaoDolar] = useState(-1);
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [modalTabelaAberto, setModalTabelaAberto] = useState(false);
+  const [linhasTabela, setLinhasTabela] = useState(3);
+  const [colunasTabela, setColunasTabela] = useState(3);
   const editorRef = useRef(null);
+  const lastProcessedTextRef = useRef('');
+  const debounceTimeoutRef = useRef(null);
 
   const editor = useEditor({
     extensions: [
@@ -90,6 +150,12 @@ const TextEditor = forwardRef(({
       TextAlign.configure({
         types: ['heading', 'paragraph']
       }),
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: content || '',
     editorProps: {
@@ -100,36 +166,87 @@ const TextEditor = forwardRef(({
     onUpdate: ({ editor }) => {
       const text = editor.getText();
       
-      // Regex para encontrar 3 números consecutivos em qualquer lugar do texto
-      const regex = /(\d+(?:\.|,\d+)?)(?:\s+|\s*por\s+)(\d+(?:\.|,\d+)?)(?:\s+|\s*por\s+)(\d+(?:\.|,\d+)?)\s{2}/g;
-
-      // Verifica se há 3 números consecutivos no texto
-      const match = regex.exec(text);
-
-      // Verifica se após o último número tem um espaço vazio
-      if (match) {
-        // Extrai os números dos grupos capturados
-        const num1 = parseFloat(match[1].replace(',', '.')).toFixed(1);
-        const num2 = parseFloat(match[2].replace(',', '.')).toFixed(1);
-        const num3 = parseFloat(match[3].replace(',', '.')).toFixed(1);
-
-        // Ordena os números em ordem decrescente
-        const numeros = [num1, num2, num3].sort((a, b) => b - a);
-        
-        // Calcula o volume
-        const volume = (numeros[0] * numeros[1] * numeros[2] * 0.523).toFixed(2);
-
-        // Frase que substituirá os 3 números
-        const newText = `${numeros[0]} x ${numeros[1]} x ${numeros[2]} cm, com volume aproximado em ${volume} cm³`;
-
-        // Encontra a posição dos números no texto
-        const startIndex = text.indexOf(match[0]);
-        const endIndex = startIndex + match[0].length;
-
-        // Substitui os números pela nova frase
-        editor.commands.deleteRange({ from: startIndex, to: endIndex });
-        editor.commands.insertContentAt(startIndex, newText);
+      // Limpa o timeout anterior
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
       }
+      
+      // Se o texto já foi processado, não processa novamente
+      if (text === lastProcessedTextRef.current) {
+        onChange(editor.getHTML());
+        return;
+      }
+      
+      // Se está processando, não faz nada
+      if (isProcessing) {
+        onChange(editor.getHTML());
+        return;
+      }
+      
+      // Debounce de 500ms para evitar processamento excessivo
+      debounceTimeoutRef.current = setTimeout(() => {
+        // Primeira etapa: Formatação automática (espaço → hífen)
+        const formatRegex = /(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s{2}/g;
+        let formattedText = text;
+        let hasFormatting = false;
+        
+        // Aplica formatação se encontrar padrão
+        if (formatRegex.test(text)) {
+          formattedText = text.replace(formatRegex, '$1-$2-$3-');
+          hasFormatting = true;
+        }
+        
+        // Segunda etapa: Cálculo baseado no formato com hífens
+        const calcRegex = /(\d+(?:[.,]\d+)?)-(\d+(?:[.,]\d+)?)-(\d+(?:[.,]\d+)?)-/g;
+        const calcMatch = calcRegex.exec(formattedText);
+        
+        // Se encontrou formato para cálculo
+        if (calcMatch) {
+          // Extrai os números dos grupos capturados
+          const num1 = parseFloat(calcMatch[1].replace(',', '.'));
+          const num2 = parseFloat(calcMatch[2].replace(',', '.'));
+          const num3 = parseFloat(calcMatch[3].replace(',', '.'));
+
+          // Verifica se todos os números são válidos e maiores que zero
+          if (num1 > 0 && num2 > 0 && num3 > 0 && 
+              !isNaN(num1) && !isNaN(num2) && !isNaN(num3)) {
+            
+            // Marca como processando para evitar loops
+            setIsProcessing(true);
+            
+            // Ordena os números em ordem decrescente
+            const numeros = [num1, num2, num3].sort((a, b) => b - a);
+            
+            // Calcula o volume
+            const volume = (numeros[0] * numeros[1] * numeros[2] * 0.523).toFixed(2);
+
+            // Frase que substituirá os 3 números
+            const newText = `${numeros[0].toFixed(1)} x ${numeros[1].toFixed(1)} x ${numeros[2].toFixed(1)} cm, com volume aproximado em ${volume} cm³`;
+
+            // Encontra a posição dos números no texto
+            const startIndex = formattedText.indexOf(calcMatch[0]);
+            const endIndex = startIndex + calcMatch[0].length;
+
+            // Verifica se a posição é válida
+            if (startIndex !== -1 && endIndex <= formattedText.length) {
+              // Substitui os números pela nova frase
+              editor.commands.deleteRange({ from: startIndex, to: endIndex });
+              editor.commands.insertContentAt(startIndex, newText);
+              
+              // Marca o texto como processado
+              lastProcessedTextRef.current = newText;
+            }
+            
+            // Reseta o flag após um pequeno delay
+            setTimeout(() => setIsProcessing(false), 200);
+          }
+        } else if (hasFormatting) {
+          // Se só houve formatação (sem cálculo), aplica a formatação
+          const { from } = editor.state.selection;
+          editor.commands.setContent(formattedText);
+          editor.commands.setTextSelection(from);
+        }
+      }, 500);
 
       onChange(editor.getHTML());
     },
@@ -137,46 +254,61 @@ const TextEditor = forwardRef(({
       if (!editor) return;
     },
     onDestroy: (props) => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
     }
   });
 
   // Função para adicionar pontuação
   const adicionarPontuacao = (texto) => {
     // Remove pontuação no final, se houver
-    let textoProcessado = texto.trim().replace(/[.,;:]$/, '');
+    let textoProcessado = texto.trim();
+    
+    console.log('Texto original:', texto);
+    console.log('Texto processado:', textoProcessado);
 
     // Palavras que indicam final de frase
     const finalizadores = [
-      'ponto', 'virgula', 'dois pontos', 'ponto e vírgula',
-      'ponto final', 'nova linha', 'próxima linha', 'parágrafo'
+      'ponto', 'vírgula', 'virgula', 'dois pontos', 'ponto e vírgula',
+      'ponto final', 'nova linha', 'próxima linha', 'parágrafo', 'hífen', 'hifen'
     ];
 
-    // Procura por palavras finalizadoras no final do texto
-    const match = textoProcessado.match(new RegExp(`(.*?)(${finalizadores.join('|')})$`, 'i'));
+    // Procura por palavras finalizadoras em qualquer lugar do texto
+    for (const finalizador of finalizadores) {
+      const regex = new RegExp(`\\b${finalizador}\\b`, 'i');
+      const match = textoProcessado.match(regex);
+      
+      if (match) {
+        console.log('Finalizador encontrado:', finalizador);
+        
+        // Remove a palavra finalizadora do texto
+        const textoLimpo = textoProcessado.replace(regex, '').trim();
+        console.log('Texto limpo:', textoLimpo);
 
-    if (match) {
-      const [, conteudo, finalizador] = match;
-      textoProcessado = conteudo.trim();
-
-      // Adiciona a pontuação apropriada
-      switch (finalizador.toLowerCase()) {
-        case 'ponto':
-        case 'ponto final':
-          return textoProcessado + '. ';
-        case 'vírgula':
-        case 'virgula': // Adiciona variação sem acento
-          return textoProcessado + ', ';
-        case 'dois pontos':
-          return textoProcessado + ': ';
-        case 'ponto e vírgula':
-        case 'ponto e virgula': // Adiciona variação sem acento
-          return textoProcessado + '; ';
-        case 'nova linha':
-        case 'próxima linha':
-        case 'parágrafo':
-          return textoProcessado + '.\n';
-        default:
-          return textoProcessado + ' ';
+        // Adiciona a pontuação apropriada
+        switch (finalizador.toLowerCase()) {
+          case 'ponto':
+          case 'ponto final':
+            return textoLimpo + '. ';
+          case 'vírgula':
+          case 'virgula':
+            return textoLimpo + ', ';
+          case 'dois pontos':
+            return textoLimpo + ': ';
+          case 'ponto e vírgula':
+          case 'ponto e virgula':
+            return textoLimpo + '; ';
+          case 'hífen':
+          case 'hifen':
+            return textoLimpo + '-';
+          case 'nova linha':
+          case 'próxima linha':
+          case 'parágrafo':
+            return textoLimpo + '.\n';
+          default:
+            return textoLimpo + ' ';
+        }
       }
     }
 
@@ -193,11 +325,8 @@ const TextEditor = forwardRef(({
       return textoProcessado + ' ';
     }
 
-    // Caso padrão: adiciona ponto final
-    // return textoProcessado + '. '; // tava adicionando ponto final em todos os casos
-    // para garantir que a palavra "vírgula" seja adicionada com vírgula, coloca um replace vírgula por ,
-    // textoProcessado = textoProcessado.replace('vírgula', ',');
-    return textoProcessado;
+    // Caso padrão: retorna o texto sem pontuação adicional
+    return textoProcessado + ' ';
   };
 
   // Modifica o useEffect do reconhecimento de voz
@@ -333,6 +462,43 @@ const TextEditor = forwardRef(({
             .run();
         }
       }
+
+      // Ctrl + Shift + C para copiar tabela
+      if (event.ctrlKey && event.shiftKey && event.key === 'C') {
+        event.preventDefault();
+        copiarTabela();
+      }
+
+      // Ctrl + Shift + V para colar tabela
+      if (event.ctrlKey && event.shiftKey && event.key === 'V') {
+        event.preventDefault();
+        colarTabela();
+      }
+
+      // Delete para deletar tabela
+      if (event.key === 'Delete' && !event.ctrlKey && !event.shiftKey) {
+        const { from } = editor.state.selection;
+        const $pos = editor.state.doc.resolve(from);
+        if ($pos.parent.type.name === 'table') {
+          event.preventDefault();
+          deletarTabela();
+        }
+      }
+
+      // Tab para sair da tabela
+      if (event.key === 'Tab' && !event.ctrlKey && !event.shiftKey) {
+        const { from } = editor.state.selection;
+        const $pos = editor.state.doc.resolve(from);
+        if ($pos.parent.type.name === 'table') {
+          // Se estiver na última célula da tabela, sai da tabela
+          const tableEnd = $pos.end();
+          const nextPos = editor.state.doc.resolve(tableEnd + 1);
+          if (nextPos.parent.type.name !== 'table') {
+            event.preventDefault();
+            sairDaTabela();
+          }
+        }
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -421,6 +587,190 @@ const TextEditor = forwardRef(({
   const handleFontSizeChange = (value) => {
     if (editor) {
       editor.commands.setFontSize(value);
+    }
+  };
+
+  const inserirTabela = () => {
+    if (editor) {
+      editor.commands.insertTable({
+        rows: linhasTabela,
+        cols: colunasTabela,
+        withHeaderRow: true,
+      });
+      setModalTabelaAberto(false);
+    }
+  };
+
+  const copiarTabela = () => {
+    if (editor) {
+      const { from, to } = editor.state.selection;
+      
+      // Verifica se há uma tabela selecionada
+      const $from = editor.state.doc.resolve(from);
+      const $to = editor.state.doc.resolve(to);
+      
+      // Encontra a tabela que contém a seleção
+      let tableStart = from;
+      let tableEnd = to;
+      
+      // Procura o início da tabela
+      for (let i = from; i >= 0; i--) {
+        const $pos = editor.state.doc.resolve(i);
+        if ($pos.parent.type.name === 'table') {
+          tableStart = $pos.start();
+          break;
+        }
+      }
+      
+      // Procura o fim da tabela
+      for (let i = to; i < editor.state.doc.content.size; i++) {
+        const $pos = editor.state.doc.resolve(i);
+        if ($pos.parent.type.name === 'table') {
+          tableEnd = $pos.end();
+          break;
+        }
+      }
+      
+      // Se encontrou uma tabela, copia em formato tabulado
+      if (tableStart < tableEnd) {
+        // Cria um elemento temporário para extrair o HTML da tabela
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = editor.getHTML();
+        
+        // Encontra a tabela no HTML
+        const tableElement = tempDiv.querySelector('table');
+        if (tableElement) {
+          // Extrai dados da tabela para formato tabulado
+          const rows = tableElement.querySelectorAll('tr');
+          const tableData = [];
+          
+          rows.forEach(row => {
+            const cells = row.querySelectorAll('td, th');
+            const rowData = [];
+            cells.forEach(cell => {
+              // Remove quebras de linha e espaços extras
+              const cellText = cell.textContent.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+              rowData.push(cellText);
+            });
+            tableData.push(rowData);
+          });
+          
+          // Converte para formato tabulado (separado por tabs)
+          const tabulatedText = tableData.map(row => row.join('\t')).join('\n');
+          
+          // Copia o texto tabulado (mais compatível com aplicativos desktop)
+          navigator.clipboard.writeText(tabulatedText).then(() => {
+            console.log('Tabela copiada em formato tabulado');
+          }).catch(err => {
+            console.error('Erro ao copiar tabela:', err);
+            // Fallback para navegadores antigos
+            const textArea = document.createElement('textarea');
+            textArea.value = tabulatedText;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+          });
+        }
+      } else {
+        // Se não há tabela selecionada, copia o texto normal
+        const selectedText = editor.state.doc.textBetween(from, to);
+        navigator.clipboard.writeText(selectedText).catch(err => {
+          console.error('Erro ao copiar texto:', err);
+          document.execCommand('copy');
+        });
+      }
+    }
+  };
+
+  const colarTabela = async () => {
+    if (editor) {
+      try {
+        const clipboardText = await navigator.clipboard.readText();
+        
+        // Verifica se o texto copiado contém uma tabela HTML
+        if (clipboardText.includes('<table') && clipboardText.includes('</table>')) {
+          // Insere o HTML da tabela na posição atual
+          editor.commands.insertContent(clipboardText);
+        } else {
+          // Se não for uma tabela, insere como texto normal
+          editor.commands.insertContent(clipboardText);
+        }
+      } catch (err) {
+        console.error('Erro ao colar tabela:', err);
+        // Fallback: usa o método antigo
+        document.execCommand('paste');
+      }
+    }
+  };
+
+  const deletarTabela = () => {
+    if (editor) {
+      const { from, to } = editor.state.selection;
+      
+      // Verifica se há uma tabela selecionada
+      const $from = editor.state.doc.resolve(from);
+      const $to = editor.state.doc.resolve(to);
+      
+      // Encontra a tabela que contém a seleção
+      let tableStart = from;
+      let tableEnd = to;
+      
+      // Procura o início da tabela
+      for (let i = from; i >= 0; i--) {
+        const $pos = editor.state.doc.resolve(i);
+        if ($pos.parent.type.name === 'table') {
+          tableStart = $pos.start();
+          break;
+        }
+      }
+      
+      // Procura o fim da tabela
+      for (let i = to; i < editor.state.doc.content.size; i++) {
+        const $pos = editor.state.doc.resolve(i);
+        if ($pos.parent.type.name === 'table') {
+          tableEnd = $pos.end();
+          break;
+        }
+      }
+      
+      // Se encontrou uma tabela, deleta ela
+      if (tableStart < tableEnd) {
+        editor.commands.deleteRange({ from: tableStart, to: tableEnd });
+        console.log('Tabela deletada');
+      }
+    }
+  };
+
+  const sairDaTabela = () => {
+    if (editor) {
+      const { from } = editor.state.selection;
+      
+      // Verifica se está dentro de uma tabela
+      const $pos = editor.state.doc.resolve(from);
+      if ($pos.parent.type.name === 'table') {
+        // Encontra o fim da tabela
+        let tableEnd = from;
+        for (let i = from; i < editor.state.doc.content.size; i++) {
+          const $pos = editor.state.doc.resolve(i);
+          if ($pos.parent.type.name === 'table') {
+            tableEnd = $pos.end();
+          } else {
+            break;
+          }
+        }
+        
+        // Move o cursor para depois da tabela
+        editor.commands.setTextSelection(tableEnd + 1);
+        
+        // Insere uma quebra de linha se necessário
+        const nextPos = editor.state.doc.resolve(tableEnd + 1);
+        if (nextPos.parent.type.name !== 'paragraph') {
+          editor.commands.insertContent('\n');
+        }
+        
+        console.log('Saiu da tabela');
+      }
     }
   };
 
@@ -601,6 +951,49 @@ const TextEditor = forwardRef(({
               <RichTextEditor.Hr />
               <RichTextEditor.BulletList />
               <RichTextEditor.OrderedList />
+            </RichTextEditor.ControlsGroup>
+
+            <RichTextEditor.ControlsGroup>
+              <Tooltip label="Inserir Tabela">
+                <RichTextEditor.Control
+                  onClick={() => setModalTabelaAberto(true)}
+                  aria-label="Inserir Tabela"
+                >
+                  <IconTable size={16} />
+                </RichTextEditor.Control>
+              </Tooltip>
+              <Tooltip label="Copiar Tabela como Texto (Ctrl+Shift+C)">
+                <RichTextEditor.Control
+                  onClick={copiarTabela}
+                  aria-label="Copiar Tabela"
+                >
+                  <IconCopy size={16} />
+                </RichTextEditor.Control>
+              </Tooltip>
+              <Tooltip label="Colar Tabela (Ctrl+Shift+V)">
+                <RichTextEditor.Control
+                  onClick={colarTabela}
+                  aria-label="Colar Tabela"
+                >
+                  <IconClipboardCopy size={16} />
+                </RichTextEditor.Control>
+              </Tooltip>
+              <Tooltip label="Deletar Tabela (Delete)">
+                <RichTextEditor.Control
+                  onClick={deletarTabela}
+                  aria-label="Deletar Tabela"
+                >
+                  <IconTrash size={16} />
+                </RichTextEditor.Control>
+              </Tooltip>
+              <Tooltip label="Sair da Tabela (Tab)">
+                <RichTextEditor.Control
+                  onClick={sairDaTabela}
+                  aria-label="Sair da Tabela"
+                >
+                  <IconArrowRight size={16} />
+                </RichTextEditor.Control>
+              </Tooltip>
             </RichTextEditor.ControlsGroup>
           </RichTextEditor.Toolbar>
 
@@ -790,14 +1183,116 @@ const TextEditor = forwardRef(({
               <IconDeviceFloppy size={16} />
             </ActionIcon>
           </Tooltip>
+          <Tooltip label="Copiar Tabela" zIndex={1001}>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              onClick={() => {
+                copiarTabela();
+                setContextMenu({ visible: false, x: 0, y: 0 });
+              }}
+            >
+              <IconTable size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Deletar Tabela" zIndex={1001}>
+            <ActionIcon
+              variant="subtle"
+              color="red"
+              onClick={() => {
+                deletarTabela();
+                setContextMenu({ visible: false, x: 0, y: 0 });
+              }}
+            >
+              <IconTrash size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Sair da Tabela" zIndex={1001}>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              onClick={() => {
+                sairDaTabela();
+                setContextMenu({ visible: false, x: 0, y: 0 });
+              }}
+            >
+              <IconArrowRight size={16} />
+            </ActionIcon>
+          </Tooltip>
         </Paper>
       )}
+
+      {/* Modal de Configuração da Tabela */}
+      <Modal
+        opened={modalTabelaAberto}
+        onClose={() => setModalTabelaAberto(false)}
+        title="Inserir Tabela"
+        centered
+        size="sm"
+      >
+        <Stack spacing="md">
+          <Text size="sm" c="dimmed">
+            Configure o tamanho da tabela que deseja inserir:
+          </Text>
+          
+          <NumberInput
+            label="Número de Linhas"
+            placeholder="3"
+            min={1}
+            max={20}
+            value={linhasTabela}
+            onChange={setLinhasTabela}
+            required
+          />
+          
+          <NumberInput
+            label="Número de Colunas"
+            placeholder="3"
+            min={1}
+            max={10}
+            value={colunasTabela}
+            onChange={setColunasTabela}
+            required
+          />
+          
+          <Group justify="flex-end" mt="md">
+            <Button variant="outline" onClick={() => setModalTabelaAberto(false)}>
+              Cancelar
+            </Button>
+            <Button color="blue" onClick={inserirTabela}>
+              Inserir Tabela
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <style>{`
         @keyframes pulse {
           0% { opacity: 1; }
           50% { opacity: 0.5; }
           100% { opacity: 1; }
+        }
+        
+        /* Estilos adicionais para tabelas */
+        .ProseMirror table {
+          border: 1px solid #000 !important;
+          border-collapse: collapse !important;
+        }
+        
+        .ProseMirror td,
+        .ProseMirror th {
+          border: 1px solid #000 !important;
+          padding: 8px 12px !important;
+        }
+        
+        .ProseMirror th {
+          background-color: #f8f9fa !important;
+          font-weight: bold !important;
+          text-align: center !important;
+        }
+        
+        .ProseMirror table p {
+          margin: 0 !important;
         }
       `}</style>
     </Stack>

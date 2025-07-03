@@ -1,7 +1,7 @@
 import { Divider, Stack, Select, TextInput, Button, Group, Text, Tooltip } from '@mantine/core';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import VariaveisCombobox from './VariaveisCombobox';
-import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp, IconSearch } from '@tabler/icons-react';
 import api from '../api';
 
 function VariaveisModal({ onVariavelSelect }) {
@@ -16,6 +16,36 @@ function VariaveisModal({ onVariavelSelect }) {
   const [delimitador, setDelimitador] = useState('');
   const [ultimoDelimitador, setUltimoDelimitador] = useState('');
   const [modo, setModo] = useState('selecionar'); // 'selecionar' ou 'criar'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [variaveis, setVariaveis] = useState([]);
+  const [filteredVariaveis, setFilteredVariaveis] = useState([]);
+
+  // Carrega as variáveis ao montar o componente
+  useEffect(() => {
+    const fetchVariaveis = async () => {
+      try {
+        const response = await api.get('/api/variaveis/');
+        setVariaveis(response.data);
+        setFilteredVariaveis(response.data);
+      } catch (error) {
+        console.error('Erro ao buscar variáveis:', error);
+      }
+    };
+
+    fetchVariaveis();
+  }, []);
+
+  // Filtra as variáveis quando o termo de busca muda
+  useEffect(() => {
+    if (searchTerm.trim() === '') {
+      setFilteredVariaveis(variaveis);
+    } else {
+      const filtered = variaveis.filter(variavel =>
+        variavel.tituloVariavel.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredVariaveis(filtered);
+    }
+  }, [searchTerm, variaveis]);
 
   const handleVariavelSelect = (variavel) => {
     if (!variavel) {
@@ -179,11 +209,51 @@ function VariaveisModal({ onVariavelSelect }) {
         <>
           <Divider label="Escolha uma variável" labelPosition="center" my="md" />
           
-          <VariaveisCombobox
-            value={variavelSelecionada}
-            onChange={handleVariavelSelect}
-            label="Variável"          
+          {/* Campo de busca */}
+          <TextInput
+            placeholder="Digite para buscar variáveis..."
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.currentTarget.value)}
+            leftSection={<IconSearch size={16} />}
+            clearable
           />
+          
+          {/* Lista de variáveis filtradas */}
+          <div style={{ 
+            maxHeight: '300px', 
+            overflowY: 'auto',
+            border: '1px solid #dee2e6',
+            borderRadius: '4px',
+            padding: '8px'
+          }}>
+            {filteredVariaveis.length > 0 ? (
+              <Stack spacing="xs">
+                {filteredVariaveis.map((variavel) => (
+                  <Button
+                    key={variavel.id}
+                    variant="light"
+                    fullWidth
+                    justify="flex-start"
+                    onClick={() => handleVariavelSelect(variavel)}
+                    style={{
+                      textAlign: 'left',
+                      height: 'auto',
+                      padding: '8px 12px'
+                    }}
+                  >
+                    <Stack spacing={2} style={{ width: '100%' }}>
+                      <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+                      <Text size="xs" c="dimmed">Tipo: {variavel.variavel.tipo}</Text>
+                    </Stack>
+                  </Button>
+                ))}
+              </Stack>
+            ) : (
+              <Text size="sm" c="dimmed" ta="center" py="md">
+                {searchTerm ? 'Nenhuma variável encontrada' : 'Carregando variáveis...'}
+              </Text>
+            )}
+          </div>
 
           {variavelSelecionada && (
             <div style={{ 
