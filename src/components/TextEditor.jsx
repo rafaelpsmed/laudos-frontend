@@ -166,9 +166,40 @@ const TextEditor = forwardRef(({
     onUpdate: ({ editor }) => {
       const text = editor.getText();
       
-      // Limpa o timeout anterior
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
+      // Regex para encontrar 3 números consecutivos em qualquer lugar do texto
+      const regex = /(\d+(?:\.|,\d+)?)(?:\s+|\s*por\s+)(\d+(?:\.|,\d+)?)(?:\s+|\s*por\s+)(\d+(?:\.|,\d+)?)\s{2}/g;
+
+      //const regex = /(?<N1>\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(?<N2>\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(?<N3>\d+(?:[.,]\d+)?)/g;
+      //const regex = /(\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(\d+(?:[.,]\d+)?)(?:\s*(?:por|x)?\s*)(\d+(?:[.,]\d+)?)/g;
+
+      // Verifica se há 3 números consecutivos no texto
+      const match = regex.exec(text);
+
+      // Verifica se após o último número tem um espaço vazio
+      if (match) {
+        // Extrai os números dos grupos capturados
+        const num1 = parseFloat(match[1].replace(',', '.')).toFixed(1);
+        const num2 = parseFloat(match[2].replace(',', '.')).toFixed(1);
+        const num3 = parseFloat(match[3].replace(',', '.')).toFixed(1);
+
+        // Ordena os números em ordem decrescente
+        const numeros = [num1, num2, num3].sort((a, b) => b - a);
+        
+        // Calcula o volume
+        const volume = (numeros[0] * numeros[1] * numeros[2] * 0.523).toFixed(2);
+
+        // Frase que substituirá os 3 números
+        const newText = `${numeros[0]} x ${numeros[1]} x ${numeros[2]} cm, com volume aproximado em ${volume} cm³`;
+
+        // Encontra a posição dos números no texto
+        const startIndex = text.indexOf(match[0]);
+        const endIndex = startIndex + match[0].length;
+
+        // Substitui os números pela nova frase
+        editor.commands.deleteRange({ from: startIndex, to: endIndex });
+        editor.commands.insertContentAt(startIndex, newText);
+
+        
       }
       
       // Se o texto já foi processado, não processa novamente
