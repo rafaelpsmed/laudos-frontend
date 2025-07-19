@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import api from '../api';
 import ComboboxAutocomplete from './componentesVariaveisModal/ComboboxAutocomplete';
 
-function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, onConfirm, tituloFrase, temMedida }) {
+function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, elementosOrdenados, onConfirm, tituloFrase, temMedida }) {
   const [valoresSelecionados, setValoresSelecionados] = useState({});
   const [variaveisDetalhes, setVariaveisDetalhes] = useState([]);
   const [medida, setMedida] = useState('');
@@ -230,50 +230,58 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, on
       size="lg"
     >
       <Stack>
-        {/* Grupos de opções com radio buttons */}
-        {gruposOpcoes && gruposOpcoes.map((grupo, index) => (
-          <Stack key={`grupo_${index}`} spacing="xs">
-            <Text size="sm" fw={500}>Grupo de opções {index + 1}:</Text>
-            <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '4px 8px', borderRadius: '4px' }}>
-              {grupo.textoOriginal}
-            </Text>
-            <Radio.Group
-              value={opcoesRadio[`grupo_${index}`] || grupo.opcoes[0]}
-              onChange={(value) => setOpcoesRadio(prev => ({
-                ...prev,
-                [`grupo_${index}`]: value
-              }))}
-            >
-              <Group mt="xs">
-                {grupo.opcoes.map((opcao) => (
-                  <Radio
-                    key={opcao}
-                    value={opcao}
-                    label={opcao}
-                  />
-                ))}
-              </Group>
-            </Radio.Group>
-            <Divider my="xs" />
-          </Stack>
-        ))}
-
-        {/* Campo de medida */}
-        {temMedida && (
-          <TextInput
-            label="Medida"
-            value={medida}
-            onChange={(event) => setMedida(event.currentTarget.value)}
-            placeholder="Digite a medida"
-          />
-        )}
-
-        {/* Variáveis existentes */}
-        {variaveisDetalhes.map((variavel) => (
-          <div key={variavel.id}>
-            {renderControle(variavel)}
-          </div>
-        ))}
+        {/* Renderiza elementos na ordem que aparecem no texto */}
+        {elementosOrdenados && elementosOrdenados.map((elemento, index) => {
+          if (elemento.tipo === 'grupo') {
+            return (
+              <Stack key={`grupo_${index}`} spacing="xs">
+                <Text size="sm" fw={500}>Grupo de opções {index + 1}:</Text>
+                {/* <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '4px 8px', borderRadius: '4px' }}>
+                  {elemento.dados.textoOriginal}
+                </Text> */}
+                <Radio.Group
+                  value={opcoesRadio[`grupo_${index}`] || elemento.dados.opcoes[0]}
+                  onChange={(value) => setOpcoesRadio(prev => ({
+                    ...prev,
+                    [`grupo_${index}`]: value
+                  }))}
+                >
+                  <Stack mt="xs" spacing="xs">
+                    {elemento.dados.opcoes.map((opcao) => (
+                      <Radio
+                        key={opcao}
+                        value={opcao}
+                        label={opcao}
+                      />
+                    ))}
+                  </Stack>
+                </Radio.Group>
+                {/* <Divider my="xs" /> */}
+              </Stack>
+            );
+          } else if (elemento.tipo === 'medida') {
+            return (
+              <TextInput
+                key={`medida_${index}`}
+                label="Medida"
+                value={medida}
+                onChange={(event) => setMedida(event.currentTarget.value)}
+                placeholder="Digite a medida"
+              />
+            );
+          } else if (elemento.tipo === 'variavel') {
+            // Encontra os detalhes da variável
+            const variavelDetalhes = variaveisDetalhes.find(v => v.id === elemento.dados.id);
+            if (variavelDetalhes) {
+              return (
+                <div key={`variavel_${index}`}>
+                  {renderControle(variavelDetalhes)}
+                </div>
+              );
+            }
+          }
+          return null;
+        })}
 
         <Group position="right" mt="md">
           <Button onClick={handleConfirm}>Confirmar</Button>

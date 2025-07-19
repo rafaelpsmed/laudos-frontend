@@ -29,6 +29,7 @@ function Laudos() {
   const [modalInserirFraseAberto, setModalInserirFraseAberto] = useState(false);
   const [variaveisEncontradas, setVariaveisEncontradas] = useState([]);
   const [gruposOpcoesEncontrados, setGruposOpcoesEncontrados] = useState([]);
+  const [elementosOrdenados, setElementosOrdenados] = useState([]);
   const [textoTemporario, setTextoTemporario] = useState('');
   const [fraseTemporaria, setFraseTemporaria] = useState(null);
   const [temTextoSelecionado, setTemTextoSelecionado] = useState(false);
@@ -38,7 +39,6 @@ function Laudos() {
   const [aguardandoSelecao, setAguardandoSelecao] = useState(false);
   const [aguardandoLinha, setAguardandoLinha] = useState(false);
   const editorRef = useRef(null);
-  const [frasesSemMetodos, setFrasesSemMetodos] = useState([]);
   const [todasFrases, setTodasFrases] = useState([]);
   const [baixarDocx, setBaixarDocx] = useState(false);
   const [tituloOutroModelo, setTituloOutroModelo] = useState('');
@@ -47,7 +47,6 @@ function Laudos() {
   const [titulosOutroModelo, setTitulosOutroModelo] = useState([]);
   const [searchModeloFrases, setSearchModeloFrases] = useState('');
   const [searchOutroModeloFrases, setSearchOutroModeloFrases] = useState('');
-  const [searchFrasesGerais, setSearchFrasesGerais] = useState('');
 
   const handleMetodosModeloChange = (newValue) => {
     setMetodosModelo(newValue);
@@ -152,13 +151,14 @@ function Laudos() {
       const textoFormatado = typeof textoModelo === 'string' ? textoModelo : String(textoModelo);
       
       // Procura por variáveis e grupos de opções no texto do modelo
-      const { variaveis, gruposOpcoes } = await buscarVariaveisNoTexto(textoFormatado);
+      const { variaveis, gruposOpcoes, elementosOrdenados } = await buscarVariaveisNoTexto(textoFormatado);
       
       // Se encontrou variáveis, grupos de opções ou tem '$', guarda o texto temporariamente e abre o modal
       if (variaveis.length > 0 || gruposOpcoes.length > 0 || textoFormatado.includes('$')) {
         setTextoTemporario(textoFormatado);
         setVariaveisEncontradas(variaveis);
         setGruposOpcoesEncontrados(gruposOpcoes);
+        setElementosOrdenados(elementosOrdenados);
         setFraseTemporaria(null); // Não é uma frase, é um modelo
         setModalVariaveisAberto(true);
       } else {
@@ -187,6 +187,11 @@ function Laudos() {
         f.modelos_laudo && f.modelos_laudo.includes(modeloSelecionado.id)
       );
 
+      // Busca as frases gerais (não associadas a nenhum modelo)
+      const frasesGerais = frasesResponse.data.filter(f => 
+        !f.modelos_laudo || f.modelos_laudo.length === 0
+      );
+
       console.log('Categorias recebidas:', frasesDoModelo.map(frase => frase.categoriaFrase));
       
       // Organiza as frases por categoria
@@ -198,7 +203,8 @@ function Laudos() {
         const children = frasesCategoria.map(frase => ({
           id: `${categoria}-${frase.tituloFrase}`,
           name: frase.tituloFrase,
-          type: 'titulo'
+          type: 'titulo',
+          isModelo: true // Marca como frase do modelo
         }));
 
         return {
@@ -207,6 +213,27 @@ function Laudos() {
           type: 'categoria',
           children
         };
+      });
+
+      // Adiciona as frases gerais em suas próprias categorias
+      const categoriasGerais = [...new Set(frasesGerais.map(frase => frase.categoriaFrase))];
+      
+      categoriasGerais.forEach(categoria => {
+        const frasesCategoria = frasesGerais.filter(frase => frase.categoriaFrase === categoria);
+        
+        const children = frasesCategoria.map(frase => ({
+          id: `${categoria}-${frase.tituloFrase}`,
+          name: frase.tituloFrase,
+          type: 'titulo',
+          isModelo: false // Marca como frase geral
+        }));
+
+        treeItems.push({
+          id: categoria,
+          name: categoria,
+          type: 'categoria',
+          children
+        });
       });
 
       setTreeDataModelo(treeItems);
@@ -441,13 +468,14 @@ function Laudos() {
     }
 
     // Procura por variáveis e grupos de opções no texto
-    const { variaveis, gruposOpcoes } = await buscarVariaveisNoTexto(novoTexto);
+    const { variaveis, gruposOpcoes, elementosOrdenados } = await buscarVariaveisNoTexto(novoTexto);
     
     // Se encontrou variáveis, grupos de opções ou tem '$', guarda o texto temporariamente e abre o modal
     if (variaveis.length > 0 || gruposOpcoes.length > 0 || novoTexto.includes('$')) {
       setTextoTemporario(novoTexto);
       setVariaveisEncontradas(variaveis);
       setGruposOpcoesEncontrados(gruposOpcoes);
+      setElementosOrdenados(elementosOrdenados);
       setFraseTemporaria(frase);
       setModalVariaveisAberto(true);
     } else {
@@ -514,8 +542,10 @@ function Laudos() {
       const response = await api.get('/api/variaveis/');
       const todasVariaveis = response.data;
       
+      // Array para armazenar todos os elementos na ordem que aparecem
+      const elementosOrdenados = [];
+      
       // Encontra todas as ocorrências de {variavel}
-      const variaveisEncontradas = [];
       const regexVariaveis = /{([^}]+)}/g;
       let match;
       
@@ -524,38 +554,67 @@ function Laudos() {
         // Procura a variável pelo título exato
         const variavel = todasVariaveis.find(v => v.tituloVariavel === tituloVariavel);
         
-        if (variavel && !variaveisEncontradas.some(v => v.id === variavel.id)) {
-          variaveisEncontradas.push(variavel);
+        if (variavel) {
+          elementosOrdenados.push({
+            tipo: 'variavel',
+            dados: variavel,
+            posicao: match.index,
+            textoOriginal: match[0]
+          });
         }
       }
 
       // Encontra todas as ocorrências de grupos de opções [op1//op2//op3]
       const regexOpcoes = /\[(([^\]]+)\/\/([^\]]+)(?:\/\/[^\]]+)*)\]/g;
       let matchOpcoes;
-      const gruposOpcoes = [];
       
       while ((matchOpcoes = regexOpcoes.exec(texto)) !== null) {
         const grupoCompleto = matchOpcoes[0]; // Inclui os [ ]
         const conteudoGrupo = matchOpcoes[1]; // Conteúdo entre [ ]
         const opcoes = conteudoGrupo.split('//').map(op => op.trim());
         
-        gruposOpcoes.push({
-          tipo: 'opcoes',
-          textoOriginal: grupoCompleto,
-          opcoes: opcoes,
+        elementosOrdenados.push({
+          tipo: 'grupo',
+          dados: {
+            textoOriginal: grupoCompleto,
+            opcoes: opcoes
+          },
           posicao: matchOpcoes.index
         });
       }
+
+      // Verifica se tem medida ($)
+      if (texto.includes('$')) {
+        elementosOrdenados.push({
+          tipo: 'medida',
+          dados: { textoOriginal: '$' },
+          posicao: texto.indexOf('$')
+        });
+      }
+      
+      // Ordena os elementos pela posição no texto
+      elementosOrdenados.sort((a, b) => a.posicao - b.posicao);
+      
+      // Separa os elementos por tipo para manter compatibilidade
+      const variaveisEncontradas = elementosOrdenados
+        .filter(el => el.tipo === 'variavel')
+        .map(el => el.dados);
+        
+      const gruposOpcoes = elementosOrdenados
+        .filter(el => el.tipo === 'grupo')
+        .map(el => el.dados);
       
       return {
         variaveis: variaveisEncontradas,
-        gruposOpcoes: gruposOpcoes
+        gruposOpcoes: gruposOpcoes,
+        elementosOrdenados: elementosOrdenados
       };
     } catch (error) {
       console.error('Erro ao buscar variáveis:', error);
       return {
         variaveis: [],
-        gruposOpcoes: []
+        gruposOpcoes: [],
+        elementosOrdenados: []
       };
     }
   };
@@ -642,12 +701,37 @@ function Laudos() {
     
     return filteredItems.map((item) => {
       if (item.type === 'categoria') {
+        // Determina a cor da categoria baseada nas frases que ela contém
+        const temFrasesModelo = item.children?.some(child => child.isModelo);
+        const temFrasesGerais = item.children?.some(child => !child.isModelo);
+        
+        let categoriaColor = '#000'; // Cor padrão
+        let categoriaWeight = 'bold';
+        
+        if (temFrasesModelo && temFrasesGerais) {
+          // Categoria mista - usa cor neutra
+          categoriaColor = '#666';
+          categoriaWeight = 'bold';
+        } else if (temFrasesModelo) {
+          // Apenas frases do modelo
+          categoriaColor = '#228be6';
+          categoriaWeight = 'bold';
+        } else if (temFrasesGerais) {
+          // Apenas frases gerais
+          categoriaColor = '#fa5252';
+          categoriaWeight = 'bold';
+        }
+        
         return (
           <NavLink
             key={item.id}
             label={item.name}
             leftSection={<IconFolder size={16} />}
             childrenOffset={28}
+            style={{
+              color: categoriaColor,
+              fontWeight: categoriaWeight
+            }}
           >
             {item.children && renderTreeItems(item.children, searchTerm)}
           </NavLink>
@@ -712,6 +796,10 @@ function Laudos() {
                   const [categoria] = item.id.split('-');
                   handleFraseClick(categoria, item.name);
                 }}
+                style={{
+                  color: item.isModelo ? '#228be6' : '#fa5252', // Azul para modelo, vermelho para geral
+                  fontWeight: item.isModelo ? 'bold' : 'bold' // Negrito para ambos
+                }}
               />
             </div>
           </Tooltip>
@@ -720,43 +808,7 @@ function Laudos() {
     });
   };
 
-  // Modifica o useEffect para buscar frases sem métodos
-  useEffect(() => {
-    const buscarFrasesSemMetodo = async () => {
-      try {
-        const response = await api.get('/api/frases/');
-        const frasesSemMetodo = response.data.filter(frase => 
-          !frase.modelos_laudo || frase.modelos_laudo.length === 0
-        );
 
-        // Organiza as frases por categoria
-        const categorias = [...new Set(frasesSemMetodo.map(frase => frase.categoriaFrase))];
-        
-        const treeItems = categorias.map(categoria => {
-          const frasesCategoria = frasesSemMetodo.filter(frase => frase.categoriaFrase === categoria);
-          
-          const children = frasesCategoria.map(frase => ({
-            id: `${categoria}-${frase.tituloFrase}`,
-            name: frase.tituloFrase,
-            type: 'titulo'
-          }));
-
-          return {
-            id: categoria,
-            name: categoria,
-            type: 'categoria',
-            children
-          };
-        });
-
-        setTreeDataSemMetodos(treeItems);
-      } catch (error) {
-        console.error('Erro ao buscar frases sem método:', error);
-      }
-    };
-
-    buscarFrasesSemMetodo();
-  }, []);
 
   useEffect(() => {
     const buscarTodasFrases = async () => {
@@ -945,6 +997,12 @@ function Laudos() {
                 }}>
                   {renderTreeItems(treeDataModelo, searchModeloFrases)}
                 </div>
+                <Text size="xs" lineClamp={2} c="dimmed" ta="left">
+                  🔵 Categorias/Frases associadas ao Modelo
+                </Text>
+                <Text size="xs" c="dimmed" ta="left"> 
+                  🔴 Categorias/Frases Gerais, não associadas a nenhum modelo específico
+                </Text>
               </>
             )}
 
@@ -987,23 +1045,7 @@ function Laudos() {
               </>
             )}
 
-            <Divider label="Frases Gerais, não associadas a nenhum Modelo" labelPosition="center" my="md" />
-            <TextInput
-              placeholder="Buscar frases gerais..."
-              value={searchFrasesGerais}
-              onChange={(event) => setSearchFrasesGerais(event.currentTarget.value)}
-              mb="sm"
-            />
-            <div style={{ 
-              border: '1px solid #dee2e6', 
-              borderRadius: '4px', 
-              padding: '10px',
-              backgroundColor: '#f8f9fa',
-              maxHeight: '300px',
-              overflowY: 'auto'
-            }}>
-              {renderTreeItems(treeDataSemMetodos, searchFrasesGerais)}
-            </div>
+
 
           </Stack>
         </Grid.Col>
@@ -1071,6 +1113,7 @@ function Laudos() {
         onClose={() => setModalVariaveisAberto(false)}
         variaveis={variaveisEncontradas}
         gruposOpcoes={gruposOpcoesEncontrados}
+        elementosOrdenados={elementosOrdenados}
         onConfirm={handleVariaveisSelecionadas}
         tituloFrase={tituloFraseAtual}
         temMedida={fraseTemporaria?.frase?.fraseBase?.includes('$') || textoTemporario?.includes('$')}

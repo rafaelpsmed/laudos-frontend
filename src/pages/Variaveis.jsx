@@ -222,19 +222,12 @@ function Variaveis() {
                 label="Descrição"
                 placeholder="Digite a descrição"
                 value={descricao}
-                onChange={(event) => setDescricao(event.currentTarget.value)}
+                onChange={(event) => {
+                  const novoValor = event.currentTarget.value;
+                  setDescricao(novoValor);
+                  setValor(novoValor);
+                }}
               />
-              <Tooltip label="Copiar Descrição para o campo Valor">
-                <Button 
-                  variant="light" 
-                  color="blue"
-                  onClick={() => setValor(descricao)}
-                  disabled={!descricao.trim()}
-                  style={{ alignSelf: 'flex-end', marginBottom: '4px', padding: '0 8px', width: '16px', minWidth: '4px' }}
-                >
-                  <IconArrowRight size={16} />
-                </Button>
-              </Tooltip>
               <TextInput
                 label="Valor"
                 placeholder="Digite o valor"

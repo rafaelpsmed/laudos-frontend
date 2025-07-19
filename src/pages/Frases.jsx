@@ -39,6 +39,8 @@ function Frases() {
   const [categoriasFiltradas, setCategoriasFiltradas] = useState([]);
   const [titulosFiltrados, setTitulosFiltrados] = useState([]);
   const [modalAberto, setModalAberto] = useState(false);
+  const [modalVariavelLocalAberto, setModalVariavelLocalAberto] = useState(false);
+  const [opcoesVariavelLocal, setOpcoesVariavelLocal] = useState('');
   const [treeData, setTreeData] = useState([]);
   const [treeDataSemMetodos, setTreeDataSemMetodos] = useState([]);
   const [treeDataModelo, setTreeDataModelo] = useState([]);
@@ -300,8 +302,8 @@ function Frases() {
         }
       });
 
-      if (response.data && response.data.length > 0) {
-        const frase = response.data[0];
+      if (response.data && response.data.frases && response.data.frases.length > 0) {
+        const frase = response.data.frases[0];
         console.log('Frase encontrada:', frase);
         
         // Preenche os campos com os dados da frase
@@ -933,8 +935,8 @@ function Frases() {
         }
       });
 
-      if (response.data && response.data.length > 0) {
-        const frase = response.data[0];
+      if (response.data && response.data.frases && response.data.frases.length > 0) {
+        const frase = response.data.frases[0];
         console.log('Frase encontrada:', frase);
         
         setFraseIdSemModelo(frase.id);
@@ -974,6 +976,65 @@ function Frases() {
     }
     
     setModalAberto(false);
+    localStorage.removeItem('variavelHandler');
+  };
+
+  const handleAdicionarVariavelLocal = () => {
+    if (!opcoesVariavelLocal.trim()) return;
+
+    // Divide as linhas e remove linhas vazias
+    const opcoes = opcoesVariavelLocal
+      .split('\n')
+      .map(linha => linha.trim())
+      .filter(linha => linha.length > 0);
+
+    if (opcoes.length === 0) return;
+
+    // Formata as opções no formato [opcao1//opcao2//opcao3]
+    const variavelFormatada = `[${opcoes.join('//')}]`;
+
+    const handler = localStorage.getItem('variavelHandler');
+    let textareaElement;
+    
+    if (handler === 'semModelo') {
+      textareaElement = document.querySelector('textarea[name="fraseBaseSemModelo"]');
+      if (textareaElement) {
+        const start = textareaElement.selectionStart;
+        const end = textareaElement.selectionEnd;
+        const textoAtual = fraseBaseSemModelo;
+        const novoTexto = textoAtual.substring(0, start) + variavelFormatada + textoAtual.substring(end);
+        setFraseBaseSemModelo(novoTexto);
+        
+        // Foca no textarea e posiciona o cursor após a variável inserida
+        setTimeout(() => {
+          textareaElement.focus();
+          textareaElement.setSelectionRange(start + variavelFormatada.length, start + variavelFormatada.length);
+        }, 0);
+      } else {
+        setFraseBaseSemModelo(prev => prev + (prev ? ' ' : '') + variavelFormatada);
+      }
+    } else {
+      textareaElement = document.querySelector('textarea[name="fraseBaseComModelo"]');
+      if (textareaElement) {
+        const start = textareaElement.selectionStart;
+        const end = textareaElement.selectionEnd;
+        const textoAtual = fraseBase;
+        const novoTexto = textoAtual.substring(0, start) + variavelFormatada + textoAtual.substring(end);
+        setFraseBase(novoTexto);
+        
+        // Foca no textarea e posiciona o cursor após a variável inserida
+        setTimeout(() => {
+          textareaElement.focus();
+          textareaElement.setSelectionRange(start + variavelFormatada.length, start + variavelFormatada.length);
+        }, 0);
+      } else {
+        setFraseBase(prev => prev + (prev ? ' ' : '') + variavelFormatada);
+      }
+    }
+    
+    // Fecha o modal e limpa o campo
+    setModalVariavelLocalAberto(false);
+    setOpcoesVariavelLocal('');
     localStorage.removeItem('variavelHandler');
   };
 
@@ -1097,6 +1158,7 @@ function Frases() {
                 </Input.Wrapper>
 
                 <Group justify="flex-end" align="center" mt="md">
+                  <Tooltip label="Adiciona uma variável que será utilizada nesta frase, mas que pode ser reutilizada em outras frases.">
                   <Button 
                     variant="light" 
                     color="blue"
@@ -1108,6 +1170,20 @@ function Frases() {
                   >
                     Inserir Variável
                   </Button>
+                  </Tooltip>
+                  <Tooltip label="Adiciona uma variável que será usada apenas nesta frase, não podendo ser reaproveitada em outras frases. Se quiser criar uma variável que possa ser reutilizável em outras frases, clique em Inserir Variável">
+                    <Button 
+                      variant="light" 
+                      color="blue"
+                      leftSection={<IconVariable size={20} />}
+                      onClick={() => {
+                        setModalVariavelLocalAberto(true);
+                        localStorage.setItem('variavelHandler', 'comModelo');
+                      }}
+                    >
+                      Inserir Variável Local
+                    </Button>
+                  </Tooltip>
                 </Group>
 
                 <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
@@ -1353,6 +1429,19 @@ function Frases() {
                   >
                     Inserir Variável
                   </Button>
+                  <Tooltip label="Adiciona uma variável que será usada apenas nesta frase, não podendo ser reaproveitada em outras frases. Se quiser criar uma variável que possa ser reutilizável em outras frases, clique em Inserir Variável">
+                    <Button 
+                      variant="light" 
+                      color="blue"
+                      leftSection={<IconVariable size={20} />}
+                      onClick={() => {
+                        setModalVariavelLocalAberto(true);
+                        localStorage.setItem('variavelHandler', 'semModelo');
+                      }}
+                    >
+                      Inserir Variável Local
+                    </Button>
+                  </Tooltip>
                 </Group>
 
                 {/* Botões */}
@@ -1433,6 +1522,54 @@ function Frases() {
             }
           }} 
         />
+      </Modal>
+
+      {/* Modal de Variáveis Locais */}
+      <Modal
+        opened={modalVariavelLocalAberto}
+        onClose={() => {
+          setModalVariavelLocalAberto(false);
+          setOpcoesVariavelLocal('');
+          localStorage.removeItem('variavelHandler');
+        }}
+        title="Criar Variável Local"
+        size="md"
+      >
+        <Stack spacing="md">
+          <Text size="sm" c="dimmed">
+            Digite as opções da variável local, uma por linha. Elas serão inseridas no formato [opcao1//opcao2//opcao3].
+          </Text>
+          
+          <Textarea
+            label="Opções da Variável Local"
+            placeholder="Digite uma opção por linha&#10;Exemplo:&#10;Opção 1&#10;Opção 2&#10;Opção 3"
+            value={opcoesVariavelLocal}
+            onChange={(event) => setOpcoesVariavelLocal(event.currentTarget.value)}
+            minRows={5}
+            autosize
+            maxRows={10}
+          />
+          
+          <Group justify="flex-end">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setModalVariavelLocalAberto(false);
+                setOpcoesVariavelLocal('');
+                localStorage.removeItem('variavelHandler');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              color="blue"
+              onClick={handleAdicionarVariavelLocal}
+              disabled={!opcoesVariavelLocal.trim()}
+            >
+              Adicionar
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Layout>
   );
