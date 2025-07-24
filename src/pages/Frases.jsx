@@ -65,7 +65,7 @@ function Frases() {
       if (token) {
         try {
           const decoded = jwtDecode(token);
-          const response = await api.get(`/api/usuario/${decoded.user_id}/`);
+          const response = await api.get('/api/auth/me/');
           setUserId(decoded.user_id);
           setUsername(response.data.email);
         } catch (error) {

@@ -146,10 +146,10 @@ function ModeloLaudo() {
       alert('Por favor, selecione apenas um método');
       return;
     }
-    if (!texto || texto === '<p></p>') {
-      alert('Por favor, insira o conteúdo do modelo');
-      return;
-    }
+          if (!texto || texto === '<p></p>' || texto === '') {
+        alert('Por favor, insira o conteúdo do modelo');
+        return;
+      }
 
     try {
       setSaving(true);
@@ -203,7 +203,7 @@ function ModeloLaudo() {
         alert('Por favor, selecione apenas um método');
         return;
       }
-      if (!texto || texto === '<p></p>') {
+      if (!texto || texto === '<p></p>' || texto === '') {
         alert('Por favor, insira o conteúdo do modelo');
         return;
       }
@@ -350,11 +350,8 @@ function ModeloLaudo() {
       const token = localStorage.getItem(ACCESS_TOKEN);
       if (token) {
         try {
-          const decoded = jwtDecode(token);
-          const response = await api.get(`/api/usuario/${decoded.user_id}/`);
+          const response = await api.get('/api/auth/me/');
           setUsername(response.data.email);
-          // setUsuarioId(response.data.id);
-          // console.log('Usuario ID:', usuarioId);
         } catch (error) {
           console.error('Erro ao buscar dados do usuário:', error);
         }
@@ -443,7 +440,7 @@ function ModeloLaudo() {
               onClick={handleSave}
               loading={saving}
               leftSection={<IconDeviceFloppy size={20} />}
-              disabled={!titulo.trim() || metodosSelected.length === 0 || !texto}
+              disabled={!titulo.trim() || metodosSelected.length === 0 || !texto || texto === '<p></p>' || texto === ''}
             >
               {saving ? 'Salvando...' : 'Salvar'}
             </Button>

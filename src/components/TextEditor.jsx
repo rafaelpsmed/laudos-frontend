@@ -232,8 +232,8 @@ const TextEditor = forwardRef(({
     },
 
     onUpdate: ({ editor }) => {
-      // Chama onChange primeiro para manter o estado atualizado
-      // onChange(editor.getText());
+      // Chama onChange para manter o estado atualizado
+      onChange(editor.getHTML());
     },
     onCreate: ({ editor }) => {
       if (!editor) return;
