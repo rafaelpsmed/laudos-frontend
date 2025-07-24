@@ -19,6 +19,7 @@ function VariaveisModal({ onVariavelSelect }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [variaveis, setVariaveis] = useState([]);
   const [filteredVariaveis, setFilteredVariaveis] = useState([]);
+  const [valorEditadoManualmente, setValorEditadoManualmente] = useState(false);
 
   // Carrega as variáveis ao montar o componente
   useEffect(() => {
@@ -46,6 +47,26 @@ function VariaveisModal({ onVariavelSelect }) {
       setFilteredVariaveis(filtered);
     }
   }, [searchTerm, variaveis]);
+
+  // Sincroniza o campo "Valor" com o campo "Descrição" quando o modo é 'criar'
+  useEffect(() => {
+    if (modo === 'criar' && !valorEditadoManualmente) {
+      setValor(descricao);
+    }
+  }, [descricao, modo, valorEditadoManualmente]);
+
+  // Handler para o campo "Valor" que permite edição manual
+  const handleValorChange = (event) => {
+    const novoValor = event.currentTarget.value;
+    setValor(novoValor);
+    
+    // Se o campo valor foi limpo, permite sincronização novamente
+    if (novoValor === '') {
+      setValorEditadoManualmente(false);
+    } else {
+      setValorEditadoManualmente(true);
+    }
+  };
 
   const handleVariavelSelect = (variavel) => {
     if (!variavel) {
@@ -179,6 +200,7 @@ function VariaveisModal({ onVariavelSelect }) {
     setVariavelId(null);
     setDelimitador('');
     setUltimoDelimitador('');
+    setValorEditadoManualmente(false);
   };
 
   return (
@@ -318,7 +340,8 @@ function VariaveisModal({ onVariavelSelect }) {
                   label="Valor"
                   placeholder="Digite o valor"
                   value={valor}
-                  onChange={(event) => setValor(event.currentTarget.value)}
+                  onChange={handleValorChange}
+                  // description="O valor será sincronizado automaticamente com a descrição. Você pode editá-lo manualmente se necessário."
                 />
               </Group>
 

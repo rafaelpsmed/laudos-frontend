@@ -59,6 +59,8 @@ function Frases() {
   const comboboxCategoriaSemModelo = useCombobox();
   const comboboxTituloFraseSemModelo = useCombobox();
 
+
+
   useEffect(() => {
     const fetchUserData = async () => {
       const token = localStorage.getItem(ACCESS_TOKEN);
