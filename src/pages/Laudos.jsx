@@ -394,32 +394,36 @@ function Laudos() {
       }
     } else {
       // Fluxo normal para frases com substituição
-      if (frase.frase.substituicaoFraseBase && frase.frase.fraseBase) {
-        if (editor) {
-          try {
-            // Aplica a formatação à frase base
+      if (editor) {
+        try {
+          let conteudoAtual = editor.getHTML();
+          let novoConteudo = conteudoAtual;
+
+          // Processa a substituição principal da frase base
+          if (frase.frase.substituicaoFraseBase && frase.frase.fraseBase) {
             const fraseBaseFormatada = aplicarFormatacao(converterQuebrasDeLinha(frase.frase.fraseBase));
-            
-            let conteudoAtual = editor.getHTML();
-            const novoConteudo = conteudoAtual.replace(
+            novoConteudo = conteudoAtual.replace(
               frase.frase.substituicaoFraseBase,
               fraseBaseFormatada
             );
+          }
 
-            // Processa as outras substituições
-            if (frase.frase.substituicoesOutras && frase.frase.substituicoesOutras.length > 0) {
-              frase.frase.substituicoesOutras.forEach(substituicao => {
-                const procurarPor = converterQuebrasDeLinha(substituicao.procurarPor);
-                const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
-                novoConteudo = novoConteudo.replace(procurarPor, substituirPor);
-              });
-            }
+          // Processa as outras substituições
+          if (frase.frase.substituicoesOutras && frase.frase.substituicoesOutras.length > 0) {
+            frase.frase.substituicoesOutras.forEach(substituicao => {
+              const procurarPor = converterQuebrasDeLinha(substituicao.procurarPor);
+              const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
+              novoConteudo = novoConteudo.replace(procurarPor, substituirPor);
+            });
+          }
 
+          // Só atualiza o editor se houve alguma mudança
+          if (novoConteudo !== conteudoAtual) {
             editor.commands.setContent(novoConteudo);
             novoTexto = editor.getHTML();
-          } catch (error) {
-            console.error('Erro ao substituir texto:', error);
           }
+        } catch (error) {
+          console.error('Erro ao substituir texto:', error);
         }
       }
     }
