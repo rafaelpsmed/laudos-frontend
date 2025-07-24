@@ -411,7 +411,7 @@ function Laudos() {
               frase.frase.substituicoesOutras.forEach(substituicao => {
                 const procurarPor = converterQuebrasDeLinha(substituicao.procurarPor);
                 const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
-                conteudoAtual = conteudoAtual.replace(procurarPor, substituirPor);
+                novoConteudo = novoConteudo.replace(procurarPor, substituirPor);
               });
             }
 
