@@ -98,7 +98,8 @@ const TextEditor = forwardRef(({
   onClick,
   aguardandoClique,
   aguardandoSelecao,
-  aguardandoLinha
+  aguardandoLinha,
+  aguardandoPosicaoAtual
 }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState(null);
@@ -253,16 +254,19 @@ const TextEditor = forwardRef(({
     let textoProcessado = texto.trim();
     
           // Substitui palavras por pontuação
-      textoProcessado = textoProcessado.replace(/\b vírgula\b/gi, ',');
-      textoProcessado = textoProcessado.replace(/\b virgula\b/gi, ',');
-      textoProcessado = textoProcessado.replace(/\b ponto final\b/gi, '.');
-      textoProcessado = textoProcessado.replace(/\b ponto e vírgula\b/gi, ';');
-      textoProcessado = textoProcessado.replace(/\b ponto e virgula\b/gi, ';');
-      textoProcessado = textoProcessado.replace(/\b hífen\b/gi, '-');
-      textoProcessado = textoProcessado.replace(/\b hifen\b/gi, '-');
-      textoProcessado = textoProcessado.replace(/\b nova linha\b/gi, '\n');
-      textoProcessado = textoProcessado.replace(/\b próxima linha\b/gi, '\n');
-      textoProcessado = textoProcessado.replace(/\b parágrafo\b/gi, '\n');
+      // textoProcessado = textoProcessado.replace(/\b vírgula\b/gi, ',');
+      // textoProcessado = textoProcessado.replace(/\b virgula\b/gi, ',');
+      //explicação: \b é um ancorador que indica que a palavra deve começar no início da linha ou no final da linha
+      textoProcessado = textoProcessado.replace(/vírgula\b/gi, ',');
+      textoProcessado = textoProcessado.replace(/virgula\b/gi, ',');
+      textoProcessado = textoProcessado.replace(/ponto final\b/gi, '.');
+      textoProcessado = textoProcessado.replace(/ponto e vírgula\b/gi, ';');
+      textoProcessado = textoProcessado.replace(/ponto e virgula\b/gi, ';');
+      textoProcessado = textoProcessado.replace(/hífen\b/gi, '-');
+      textoProcessado = textoProcessado.replace(/hifen\b/gi, '-');
+      textoProcessado = textoProcessado.replace(/nova linha\b/gi, '\n');
+      textoProcessado = textoProcessado.replace(/próxima linha\b/gi, '\n');
+      textoProcessado = textoProcessado.replace(/parágrafo\b/gi, '\n');
       
       // Capitaliza primeira letra após ponto final
       textoProcessado = textoProcessado.replace(/\.\s+([a-z])/g, (match, letter) => {
@@ -839,15 +843,16 @@ const TextEditor = forwardRef(({
         onContextMenu={handleContextMenu}
         style={{ 
           cursor: aguardandoClique || aguardandoLinha ? 'pointer' : 'text',
-          position: 'relative',
-          opacity: (aguardandoClique || aguardandoSelecao || aguardandoLinha) ? 0.8 : 1
+          border: '1px solid #dee2e6',
+          borderRadius: '4px',
+          opacity: aguardandoClique || aguardandoLinha || aguardandoPosicaoAtual ? 0.8 : 1
         }}
       >
         <RichTextEditor 
           editor={editor} 
           style={{ 
             minHeight: 300,
-            opacity: aguardandoClique || aguardandoLinha ? 0.8 : 1
+            opacity: aguardandoClique || aguardandoLinha || aguardandoPosicaoAtual ? 0.8 : 1
           }}
           styles={editorStyles}
         >

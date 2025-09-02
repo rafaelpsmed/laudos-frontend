@@ -38,6 +38,8 @@ function Laudos() {
   const [aguardandoClique, setAguardandoClique] = useState(false);
   const [aguardandoSelecao, setAguardandoSelecao] = useState(false);
   const [aguardandoLinha, setAguardandoLinha] = useState(false);
+  const [aguardandoPosicaoAtual, setAguardandoPosicaoAtual] = useState(false);
+  const [posicaoAtualCursor, setPosicaoAtualCursor] = useState(null);
   const editorRef = useRef(null);
   const [todasFrases, setTodasFrases] = useState([]);
   const [baixarDocx, setBaixarDocx] = useState(false);
@@ -301,7 +303,7 @@ function Laudos() {
     return textoComQuebraReal.replace(/\n/g, '<br>');
   };
 
-  const processarFrase = async (frase, tipoInsercao = null, elementoLinha = null) => {
+  const processarFrase = async (frase, tipoInsercao = null, elementoLinha = null, posicaoCursor = null) => {
     let novoTexto = texto;
     const editor = editorRef.current?.editor;
     
@@ -347,6 +349,23 @@ function Laudos() {
               const { from } = editor.state.selection;
               editor.commands.setTextSelection(from);
               editor.commands.insertContent(fraseBase);
+            }
+            break;
+
+          case 'posicaoAtual':
+            if (editor && posicaoCursor !== null) {
+              console.log('🔍 Inserindo na posição atual:', posicaoCursor);
+              console.log('🔍 Frase base:', fraseBase);
+              // Insere o conteúdo na posição passada como parâmetro
+              editor.commands.setTextSelection(posicaoCursor);
+              editor.commands.insertContent(fraseBase);
+              console.log('✅ Frase inserida com sucesso');
+              // Atualiza o texto após a inserção
+              novoTexto = editor.getHTML();
+            } else {
+              console.error('❌ Erro: editor ou posicaoCursor não disponível');
+              console.error('❌ Editor:', !!editor);
+              console.error('❌ Posição cursor:', posicaoCursor);
             }
             break;
 
@@ -503,6 +522,36 @@ function Laudos() {
 
     if (tipoInsercao === 'linha') {
       setAguardandoLinha(true);
+      return;
+    }
+
+    if (tipoInsercao === 'posicaoAtual') {
+      console.log('🚀 Iniciando inserção na posição atual');
+      // Captura a posição atual do cursor
+      const editor = editorRef.current?.editor;
+      if (editor) {
+        const { from } = editor.state.selection;
+        console.log('📍 Posição do cursor capturada:', from);
+
+        // Processa a frase imediatamente na posição capturada
+        if (fraseTemporaria) {
+          console.log('📝 Frase temporária encontrada:', fraseTemporaria.tituloFrase);
+          // Se tem medida, substitui o '$' na frase base antes de processar
+          if (medida) {
+            fraseTemporaria.frase.fraseBase = fraseTemporaria.frase.fraseBase.replace('$', medida);
+            console.log('📏 Medida aplicada:', medida);
+          }
+          console.log('⚙️ Chamando processarFrase...');
+          // Passa a posição diretamente como parâmetro
+          await processarFrase(fraseTemporaria, 'posicaoAtual', null, from);
+          setFraseTemporaria(null);
+          console.log('✅ Processamento concluído');
+        } else {
+          console.error('❌ Frase temporária não encontrada');
+        }
+      } else {
+        console.error('❌ Editor não disponível');
+      }
       return;
     }
     
@@ -1069,6 +1118,7 @@ function Laudos() {
               aguardandoClique={aguardandoClique}
               aguardandoSelecao={aguardandoSelecao}
               aguardandoLinha={aguardandoLinha}
+              aguardandoPosicaoAtual={aguardandoPosicaoAtual}
             />
 
             {/* Botões de ação do laudo */}

@@ -31,7 +31,16 @@ function InserirFraseModal({
             onClick={() => onConfirm('cursor')}
             fullWidth
           >
-            Inserir na posição do cursor
+            Escolher onde a frase será inserida
+          </Button>
+
+          <Button
+            variant="light"
+            onClick={() => onConfirm('posicaoAtual')}
+            fullWidth
+            color="blue"
+          >
+            Inserir na posição atual do cursor
           </Button>
 
           <Button

@@ -49,6 +49,7 @@ import ModeloLaudo from './pages/ModeloLaudo';
 import Frases from './pages/Frases';
 import Variaveis from './pages/Variaveis';
 import Laudos from './pages/Laudos';
+import IA from './pages/IA';
 
 // Estilos
 import '@mantine/core/styles.css';
@@ -95,6 +96,12 @@ function App() {
         <Route path="/laudos" element={
           <ProtectedRoute>
             <Laudos />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/ia" element={
+          <ProtectedRoute>
+            <IA />
           </ProtectedRoute>
         } />
 
