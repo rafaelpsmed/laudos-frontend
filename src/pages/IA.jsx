@@ -639,7 +639,7 @@ function IA() {
         setSucessoAnalise('');
 
         try {
-            const response = await api.post('/api/ia/gerar-laudo-radiologia/', {
+            const response = await api.post('/api/ia/gerar_laudo_radiologia/', {
                 texto: textoAnalise
             });
 
@@ -875,7 +875,13 @@ function IA() {
                                         Limpar Editor
                                     </Button>
                                 </Group>
-                                <TextEditor ref={editorRef} />
+                                <TextEditor 
+                                  ref={editorRef}
+                                  enableAutoSave={true}
+                                  autoSaveKey="ia_geracao_laudo_autoSave"
+                                  autoSaveInterval={5000}
+                                  showLoadButton={true}
+                                />
                             </Paper>
                         </Stack>
                     )}
@@ -944,7 +950,13 @@ function IA() {
                                             Limpar Editor
                                         </Button>
                                     </Group>
-                                    <TextEditor ref={editorSugestoesRef} />
+                                    <TextEditor 
+                                      ref={editorSugestoesRef}
+                                      enableAutoSave={true}
+                                      autoSaveKey="ia_sugestoes_autoSave"
+                                      autoSaveInterval={5000}
+                                      showLoadButton={true}
+                                    />
                                 </Paper>
                             </Stack>
                         </Stack>
@@ -1048,20 +1060,51 @@ function IA() {
                                 <Paper shadow="xs" p="md" radius="md" style={{ backgroundColor: '#f5f5f5' }}>
                                     <Group justify="space-between" mb="md">
                                         <Text size="sm" fw={500}>Laudo Radiológico Gerado:</Text>
+                                    </Group>
+                                    <TextEditor 
+                                      ref={editorAnaliseRef}
+                                      enableAutoSave={true}
+                                      autoSaveKey="ia_laudo_radiologico_autoSave"
+                                      autoSaveInterval={5000}
+                                      showLoadButton={true}
+                                    />
+                                    
+                                    {/* Botões de ação do laudo */}
+                                    <Group position="center" spacing="md" mt="md">
                                         <Button
-                                            size="xs"
-                                            variant="subtle"
-                                            color="red"
-                                            onClick={() => {
-                                                if (editorAnaliseRef.current?.editor) {
-                                                    editorAnaliseRef.current.editor.commands.setContent('');
+                                            onClick={async () => {
+                                                try {
+                                                    const editor = editorAnaliseRef.current?.editor;
+                                                    if (!editor) return;
+                                                    
+                                                    const htmlContent = editor.getHTML();
+                                                    await navigator.clipboard.writeText(htmlContent);
+                                                    setLaudoCopiado(true);
+                                                    
+                                                    setTimeout(() => {
+                                                        setLaudoCopiado(false);
+                                                    }, 3000);
+                                                } catch (error) {
+                                                    console.error('Erro ao copiar laudo:', error);
                                                 }
                                             }}
                                         >
-                                            Limpar Editor
+                                            Copiar Laudo
+                                        </Button>
+
+                                        <Button
+                                            color="red"
+                                            onClick={() => {
+                                                if (window.confirm('Tem certeza que deseja deletar o laudo?')) {
+                                                    if (editorAnaliseRef.current?.editor) {
+                                                        editorAnaliseRef.current.editor.commands.setContent('');
+                                                    }
+                                                }
+                                            }}
+                                        >
+                                            Deletar Laudo
                                         </Button>
                                     </Group>
-                                    <TextEditor ref={editorAnaliseRef} />
                                 </Paper>
                             </Stack>
                         </Stack>

@@ -12,10 +12,10 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
-import { Select, Stack, Tooltip, Text, Paper, ActionIcon, Modal, NumberInput, Button, Group } from '@mantine/core';
+import { Select, Stack, Tooltip, Text, Paper, ActionIcon, Modal, NumberInput, Button, Group, Alert } from '@mantine/core';
 import { useEffect, useCallback, forwardRef, useImperativeHandle, useState, useRef } from 'react';
 import History from '@tiptap/extension-history';
-import { IconArrowBackUp, IconArrowForwardUp, IconMicrophone, IconMicrophoneOff, IconCopy, IconCut, IconClipboardCopy, IconBold, IconItalic, IconUnderline, IconStrikethrough, IconExclamationMark, IconLetterCase, IconLetterCaseLower, IconDeviceFloppy, IconTable, IconTrash, IconArrowRight } from '@tabler/icons-react';
+import { IconArrowBackUp, IconArrowForwardUp, IconMicrophone, IconMicrophoneOff, IconCopy, IconCut, IconClipboardCopy, IconBold, IconItalic, IconUnderline, IconStrikethrough, IconExclamationMark, IconLetterCase, IconLetterCaseLower, IconDeviceFloppy, IconTable, IconTrash, IconArrowRight, IconDownload, IconAlertCircle, IconCheck } from '@tabler/icons-react';
 
 // Função para pluralizar palavras
 import pluralize from '../utils/pluralizar';
@@ -99,7 +99,12 @@ const TextEditor = forwardRef(({
   aguardandoClique,
   aguardandoSelecao,
   aguardandoLinha,
-  aguardandoPosicaoAtual
+  aguardandoPosicaoAtual,
+  // Propriedades para auto-save
+  enableAutoSave = true,
+  autoSaveKey = 'textEditor_autoSave',
+  autoSaveInterval = 5000, // 5 segundos
+  showLoadButton = true
 }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState(null);
@@ -116,6 +121,65 @@ const TextEditor = forwardRef(({
   const lastProcessedTextRef = useRef('');
   const debounceTimeoutRef = useRef(null);
   const lastSpaceTimeRef = useRef(0); // Para detectar 2 espaços consecutivos
+  
+  // Estados para auto-save
+  const [hasAutoSavedContent, setHasAutoSavedContent] = useState(false);
+  const [autoSaveMessage, setAutoSaveMessage] = useState('');
+  const autoSaveIntervalRef = useRef(null);
+  const lastSavedContentRef = useRef('');
+
+  // Função para salvar conteúdo no localStorage
+  const saveToLocalStorage = useCallback((content) => {
+    if (!enableAutoSave || !content || content.trim() === '') return;
+    
+    try {
+      localStorage.setItem(autoSaveKey, content);
+      lastSavedContentRef.current = content;
+      setHasAutoSavedContent(true);
+      console.log('✅ Conteúdo salvo automaticamente no localStorage');
+    } catch (error) {
+      console.error('❌ Erro ao salvar no localStorage:', error);
+    }
+  }, [enableAutoSave, autoSaveKey]);
+
+  // Função para carregar conteúdo do localStorage
+  const loadFromLocalStorage = useCallback(() => {
+    try {
+      const savedContent = localStorage.getItem(autoSaveKey);
+      if (savedContent) {
+        // Verifica se o editor está disponível no momento da execução
+        if (editor) {
+          editor.commands.setContent(savedContent);
+          setAutoSaveMessage('Conteúdo carregado do backup automático!');
+          setTimeout(() => setAutoSaveMessage(''), 3000);
+          console.log('✅ Conteúdo carregado do localStorage');
+        } else {
+          setAutoSaveMessage('Editor não está disponível. Tente novamente em alguns segundos.');
+          setTimeout(() => setAutoSaveMessage(''), 3000);
+        }
+      } else {
+        setAutoSaveMessage('Nenhum backup automático encontrado.');
+        setTimeout(() => setAutoSaveMessage(''), 3000);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar do localStorage:', error);
+      setAutoSaveMessage('Erro ao carregar backup automático.');
+      setTimeout(() => setAutoSaveMessage(''), 3000);
+    }
+  }, [autoSaveKey]);
+
+  // Função para limpar backup do localStorage
+  const clearAutoSave = useCallback(() => {
+    try {
+      localStorage.removeItem(autoSaveKey);
+      setHasAutoSavedContent(false);
+      setAutoSaveMessage('Backup automático removido.');
+      setTimeout(() => setAutoSaveMessage(''), 3000);
+      console.log('✅ Backup automático removido');
+    } catch (error) {
+      console.error('❌ Erro ao remover backup:', error);
+    }
+  }, [autoSaveKey]);
 
   const processVolumeCalculation = useCallback((editor) => {
     // console.log('🔍 Iniciando processamento de regex:', new Date().toISOString());
@@ -513,6 +577,59 @@ const TextEditor = forwardRef(({
       editor.commands.setContent(content || '');
     }
   }, [content, editor]);
+
+  // Configuração do auto-save
+  useEffect(() => {
+    if (!enableAutoSave || !editor) return;
+
+    // Verifica se há conteúdo salvo no localStorage ao montar o componente
+    const savedContent = localStorage.getItem(autoSaveKey);
+    if (savedContent && savedContent.trim() !== '') {
+      setHasAutoSavedContent(true);
+    }
+
+    // Configura o intervalo de auto-save
+    autoSaveIntervalRef.current = setInterval(() => {
+      if (editor) {
+        const currentContent = editor.getHTML();
+        // Só salva se o conteúdo mudou desde a última vez
+        if (currentContent !== lastSavedContentRef.current) {
+          saveToLocalStorage(currentContent);
+        }
+      }
+    }, autoSaveInterval);
+
+    // Cleanup do intervalo
+    return () => {
+      if (autoSaveIntervalRef.current) {
+        clearInterval(autoSaveIntervalRef.current);
+      }
+    };
+  }, [editor, enableAutoSave, autoSaveKey, autoSaveInterval, saveToLocalStorage]);
+
+  // Verifica se há backup disponível ao montar o componente
+  useEffect(() => {
+    if (!enableAutoSave) return;
+    
+    const savedContent = localStorage.getItem(autoSaveKey);
+    if (savedContent && savedContent.trim() !== '') {
+      setHasAutoSavedContent(true);
+    }
+  }, [enableAutoSave, autoSaveKey]);
+
+  // Auto-save quando o conteúdo muda (debounced)
+  useEffect(() => {
+    if (!enableAutoSave || !editor) return;
+
+    const timeoutId = setTimeout(() => {
+      const currentContent = editor.getHTML();
+      if (currentContent !== lastSavedContentRef.current) {
+        saveToLocalStorage(currentContent);
+      }
+    }, 2000); // 2 segundos de delay após a última mudança
+
+    return () => clearTimeout(timeoutId);
+  }, [content, enableAutoSave, editor, saveToLocalStorage]);
 
   const fonts = [
     { value: 'Arial', label: 'Arial' },
@@ -995,6 +1112,49 @@ const TextEditor = forwardRef(({
           <RichTextEditor.Content />
         </RichTextEditor>
       </div>
+
+      {/* Mensagens de auto-save */}
+      {autoSaveMessage && (
+        <Alert
+          icon={autoSaveMessage.includes('erro') || autoSaveMessage.includes('Erro') ? <IconAlertCircle size={16} /> : <IconCheck size={16} />}
+          color={autoSaveMessage.includes('erro') || autoSaveMessage.includes('Erro') ? 'red' : 'green'}
+          title="Auto-save"
+          size="sm"
+          mb="sm"
+        >
+          {autoSaveMessage}
+        </Alert>
+      )}
+
+      {/* Botões de auto-save */}
+      {showLoadButton && enableAutoSave && (
+        <Group spacing="xs" mb="sm">
+          <Button
+            size="xs"
+            variant="outline"
+            leftSection={<IconDownload size={14} />}
+            onClick={loadFromLocalStorage}
+            disabled={!hasAutoSavedContent}
+          >
+            Carregar Backup
+          </Button>
+          
+          {hasAutoSavedContent && (
+            <Button
+              size="xs"
+              variant="subtle"
+              color="red"
+              onClick={clearAutoSave}
+            >
+              Limpar Backup
+            </Button>
+          )}
+          
+          <Text size="xs" c="dimmed">
+            {hasAutoSavedContent ? 'Backup disponível' : 'Nenhum backup'}
+          </Text>
+        </Group>
+      )}
 
       {/* Context Menu */}
       {contextMenu.visible && (

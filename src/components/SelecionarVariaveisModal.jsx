@@ -8,6 +8,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   const [variaveisDetalhes, setVariaveisDetalhes] = useState([]);
   const [medida, setMedida] = useState('');
   const [opcoesRadio, setOpcoesRadio] = useState({});
+  const [variaveisPorInstancia, setVariaveisPorInstancia] = useState({}); // Estado para controlar cada instância separadamente
+  const [contagemVariaveis, setContagemVariaveis] = useState({}); // Para contar ocorrências de cada variável
 
   // Função para salvar as escolhas no localStorage
   const salvarEscolhas = (valores) => {
@@ -40,29 +42,64 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
           })
         );
         setVariaveisDetalhes(detalhes);
-        
+
         // Carrega as escolhas salvas
         const escolhasSalvas = carregarEscolhas();
-        
+
         // Inicializa o estado dos valores selecionados
         const valoresIniciais = {};
-        detalhes.forEach(variavel => {
-          // Se existe uma escolha salva para esta variável, usa ela
-          if (escolhasSalvas[variavel.id] !== undefined) {
-            // Garante que o valor seja um array para controles de múltipla seleção
-            if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
-              valoresIniciais[variavel.id] = Array.isArray(escolhasSalvas[variavel.id]) 
-                ? escolhasSalvas[variavel.id] 
-                : [];
-            } else {
-              valoresIniciais[variavel.id] = escolhasSalvas[variavel.id];
-            }
-          } else {
-            // Caso contrário, inicializa com valor padrão
-            valoresIniciais[variavel.id] = variavel.variavel.tipo.includes('múltiplas') ? [] : '';
+        const variaveisInstanciaIniciais = {};
+
+        // Conta quantas vezes cada variável aparece
+        const contagemVariaveisTemp = {};
+        elementosOrdenados.forEach(elemento => {
+          if (elemento.tipo === 'variavel') {
+            const titulo = elemento.dados.tituloVariavel;
+            contagemVariaveisTemp[titulo] = (contagemVariaveisTemp[titulo] || 0) + 1;
           }
         });
+        setContagemVariaveis(contagemVariaveisTemp);
+
+        // Para cada variável, verifica se ela aparece múltiplas vezes
+        detalhes.forEach(variavel => {
+          const titulo = variavel.tituloVariavel;
+          const aparicoes = contagemVariaveisTemp[titulo] || 1;
+
+          if (aparicoes > 1) {
+            // Se aparece múltiplas vezes, cria estados separados para cada instância
+            for (let i = 0; i < aparicoes; i++) {
+              const instanciaId = `${titulo}_${i}`;
+              if (escolhasSalvas[instanciaId] !== undefined) {
+                if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
+                  valoresIniciais[instanciaId] = Array.isArray(escolhasSalvas[instanciaId])
+                    ? escolhasSalvas[instanciaId]
+                    : [];
+                } else {
+                  valoresIniciais[instanciaId] = escolhasSalvas[instanciaId];
+                }
+              } else {
+                valoresIniciais[instanciaId] = variavel.variavel.tipo.includes('múltiplas') ? [] : '';
+              }
+              variaveisInstanciaIniciais[instanciaId] = variavel;
+            }
+          } else {
+            // Se aparece apenas uma vez, usa o comportamento normal
+            if (escolhasSalvas[variavel.id] !== undefined) {
+              if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
+                valoresIniciais[variavel.id] = Array.isArray(escolhasSalvas[variavel.id])
+                  ? escolhasSalvas[variavel.id]
+                  : [];
+              } else {
+                valoresIniciais[variavel.id] = escolhasSalvas[variavel.id];
+              }
+            } else {
+              valoresIniciais[variavel.id] = variavel.variavel.tipo.includes('múltiplas') ? [] : '';
+            }
+          }
+        });
+
         setValoresSelecionados(valoresIniciais);
+        setVariaveisPorInstancia(variaveisInstanciaIniciais);
       } catch (error) {
         console.error('Erro ao buscar detalhes das variáveis:', error);
       }
@@ -71,7 +108,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     if (opened && variaveis.length > 0) {
       buscarDetalhesVariaveis();
     }
-  }, [opened, variaveis]);
+  }, [opened, variaveis, elementosOrdenados]);
 
   useEffect(() => {
     if (opened) {
@@ -96,36 +133,162 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     salvarEscolhas(novosValores);
   };
 
+  // Função auxiliar para renderizar controles de variável por instância
+  const renderControleInstancia = (variavel, instanciaId, tituloBase) => {
+    const tipo = variavel.variavel.tipo;
+
+    const valores = variavel.variavel.valores.map(v => ({
+      value: v.valor,
+      label: v.descricao
+    }));
+
+    const value = valoresSelecionados[instanciaId] || '';
+
+    if (tipo === "Combobox") {
+      return (
+        <ComboboxAutocomplete
+          label={`${tituloBase} (instância ${instanciaId.split('_')[1]})`}
+          placeholder="Selecione um valor"
+          data={valores}
+          value={value}
+          onChange={(value) => handleChange(instanciaId, value)}
+        />
+      );
+    } else if (tipo === "Grupo de Radio") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{`${tituloBase} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <Radio.Group
+            value={value}
+            onChange={(value) => handleChange(instanciaId, value)}
+          >
+            <Stack mt="xs">
+              {valores.map((valor) => (
+                <Radio
+                  key={valor.value}
+                  value={valor.value}
+                  label={valor.label}
+                />
+              ))}
+            </Stack>
+          </Radio.Group>
+        </Stack>
+      );
+    } else if (tipo === "Grupo de Checkbox") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{`${tituloBase} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <Checkbox.Group
+            value={Array.isArray(value) ? value : []}
+            onChange={(value) => handleChange(instanciaId, value)}
+          >
+            <Stack mt="xs">
+              {valores.map((valor) => (
+                <Checkbox
+                  key={valor.value}
+                  value={valor.value}
+                  label={valor.label}
+                />
+              ))}
+            </Stack>
+          </Checkbox.Group>
+        </Stack>
+      );
+    } else if (tipo === "Combobox com múltiplas opções") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{`${tituloBase} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <MultiSelect
+            label=""
+            placeholder="Selecione os valores"
+            data={valores}
+            value={Array.isArray(value) ? value : []}
+            onChange={(value) => handleChange(instanciaId, value)}
+            searchable
+            required={false}
+            clearable
+          />
+        </Stack>
+      );
+    }
+  };
+
   const handleConfirm = () => {
     const resultado = {};
-    variaveisDetalhes.forEach(variavel => {
-      const valorSelecionado = valoresSelecionados[variavel.id];
-      
-      if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
-        // Para controles de múltipla seleção
-        const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
-        const valoresTexto = valores.map(val => {
-          const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
-          return valorEncontrado ? valorEncontrado.valor : val;
-        });
 
-        if (valoresTexto.length > 0) {
-          const delimitador = variavel.variavel.delimitador || ', ';
-          const ultimoDelimitador = variavel.variavel.ultimoDelimitador || ' e ';
-          
-          if (valoresTexto.length === 1) {
-            resultado[variavel.tituloVariavel] = valoresTexto[0];
+    // Conta quantas vezes cada variável aparece
+    const contagemVariaveis = {};
+    elementosOrdenados.forEach(elemento => {
+      if (elemento.tipo === 'variavel') {
+        const titulo = elemento.dados.tituloVariavel;
+        contagemVariaveis[titulo] = (contagemVariaveis[titulo] || 0) + 1;
+      }
+    });
+
+    // Processa cada variável considerando se ela aparece múltiplas vezes
+    variaveisDetalhes.forEach(variavel => {
+      const titulo = variavel.tituloVariavel;
+      const aparicoes = contagemVariaveis[titulo] || 1;
+
+      if (aparicoes > 1) {
+        // Se aparece múltiplas vezes, processa cada instância separadamente
+        for (let i = 0; i < aparicoes; i++) {
+          const instanciaId = `${titulo}_${i}`;
+          const valorSelecionado = valoresSelecionados[instanciaId];
+
+          if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
+            const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
+            const valoresTexto = valores.map(val => {
+              const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
+              return valorEncontrado ? valorEncontrado.valor : val;
+            });
+
+            if (valoresTexto.length > 0) {
+              const delimitador = variavel.variavel.delimitador || ', ';
+              const ultimoDelimitador = variavel.variavel.ultimoDelimitador || ' e ';
+
+              if (valoresTexto.length === 1) {
+                resultado[instanciaId] = valoresTexto[0];
+              } else {
+                const ultimoValor = valoresTexto.pop();
+                resultado[instanciaId] = valoresTexto.join(delimitador) + ultimoDelimitador + ultimoValor;
+              }
+            } else {
+              resultado[instanciaId] = '';
+            }
           } else {
-            const ultimoValor = valoresTexto.pop();
-            resultado[variavel.tituloVariavel] = valoresTexto.join(delimitador) + ultimoDelimitador + ultimoValor;
+            const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
+            resultado[instanciaId] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
           }
-        } else {
-          resultado[variavel.tituloVariavel] = '';
         }
       } else {
-        // Para controles de seleção única
-        const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
-        resultado[variavel.tituloVariavel] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
+        // Se aparece apenas uma vez, usa o comportamento normal
+        const valorSelecionado = valoresSelecionados[variavel.id];
+
+        if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
+          const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
+          const valoresTexto = valores.map(val => {
+            const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
+            return valorEncontrado ? valorEncontrado.valor : val;
+          });
+
+          if (valoresTexto.length > 0) {
+            const delimitador = variavel.variavel.delimitador || ', ';
+            const ultimoDelimitador = variavel.variavel.ultimoDelimitador || ' e ';
+
+            if (valoresTexto.length === 1) {
+              resultado[variavel.tituloVariavel] = valoresTexto[0];
+            } else {
+              const ultimoValor = valoresTexto.pop();
+              resultado[variavel.tituloVariavel] = valoresTexto.join(delimitador) + ultimoDelimitador + ultimoValor;
+            }
+          } else {
+            resultado[variavel.tituloVariavel] = '';
+          }
+        } else {
+          const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
+          resultado[variavel.tituloVariavel] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
+        }
       }
     });
 
@@ -273,11 +436,39 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
             // Encontra os detalhes da variável
             const variavelDetalhes = variaveisDetalhes.find(v => v.id === elemento.dados.id);
             if (variavelDetalhes) {
-              return (
-                <div key={`variavel_${index}`}>
-                  {renderControle(variavelDetalhes)}
-                </div>
-              );
+              const titulo = elemento.dados.tituloVariavel;
+              const aparicoes = contagemVariaveis[titulo] || 1;
+
+              if (aparicoes > 1) {
+                // Se aparece múltiplas vezes, encontra qual instância renderizar
+                // Encontra a posição desta variável entre as ocorrências
+                let posicao = 0;
+                for (let i = 0; i < elementosOrdenados.length; i++) {
+                  const el = elementosOrdenados[i];
+                  if (el.tipo === 'variavel' && el.dados.tituloVariavel === titulo) {
+                    if (el === elemento) break;
+                    posicao++;
+                  }
+                }
+
+                const instanciaId = `${titulo}_${posicao}`;
+                const variavelInstancia = variaveisPorInstancia[instanciaId];
+
+                if (variavelInstancia) {
+                  return (
+                    <div key={`variavel_${index}`}>
+                      {renderControleInstancia(variavelInstancia, instanciaId, titulo)}
+                    </div>
+                  );
+                }
+              } else {
+                // Se aparece apenas uma vez, usa o comportamento normal
+                return (
+                  <div key={`variavel_${index}`}>
+                    {renderControle(variavelDetalhes)}
+                  </div>
+                );
+              }
             }
           }
           return null;

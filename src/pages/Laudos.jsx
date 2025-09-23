@@ -672,36 +672,79 @@ function Laudos() {
     }
   };
 
-  const handleVariaveisSelecionadas = (valoresSelecionados) => {
+    const handleVariaveisSelecionadas = (valoresSelecionados) => {
+    console.log('🔄 handleVariaveisSelecionadas chamado com:', valoresSelecionados);
     let textoFinal = textoTemporario;
-  
+    console.log('📝 Texto original:', textoFinal);
+
     // Função para escapar caracteres especiais em regex
     const escapeRegExp = (string) => {
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
-  
-    // Substitui cada variável pelo valor selecionado
+
+    // Primeiro, agrupa as variáveis por instância
+    const variaveisPorTitulo = {};
+    const variaveisNormais = {};
+
     Object.entries(valoresSelecionados).forEach(([chave, valor]) => {
       if (chave === '$') {
         // Substitui o caractere '$' diretamente
-        textoFinal = textoFinal.replace('$', valor);
+        textoFinal = textoFinal.replace(/\$/g, valor);
       } else if (chave.includes('//')) {
         // Se a chave contém //, é um grupo de opções
         const regex = new RegExp(escapeRegExp(chave), 'g');
         textoFinal = textoFinal.replace(regex, valor);
+      } else if (chave.includes('_') && /^.+_\d+$/.test(chave)) {
+        // É uma variável por instância (aceita títulos com espaços)
+        const partes = chave.split('_');
+        const instanciaIndex = parseInt(partes[partes.length - 1]);
+        const tituloBase = partes.slice(0, -1).join('_');
+
+        console.log(`🔢 Variável por instância: ${chave} -> ${tituloBase}[${instanciaIndex}] = ${valor}`);
+
+        if (!variaveisPorTitulo[tituloBase]) {
+          variaveisPorTitulo[tituloBase] = [];
+        }
+        variaveisPorTitulo[tituloBase][instanciaIndex] = valor;
       } else {
-        // Para variáveis normais
-        const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
-        textoFinal = textoFinal.replace(regex, valor);
+        // Variável normal
+        variaveisNormais[chave] = valor;
       }
     });
-  
+
+    console.log('📊 Variáveis normais:', variaveisNormais);
+    console.log('📊 Variáveis por título:', variaveisPorTitulo);
+
+    // Processa variáveis normais primeiro
+    Object.entries(variaveisNormais).forEach(([chave, valor]) => {
+      const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
+      textoFinal = textoFinal.replace(regex, valor);
+      console.log(`✅ Substituição normal: {${chave}} -> ${valor}`);
+    });
+
+    // Processa variáveis por instância
+    Object.entries(variaveisPorTitulo).forEach(([tituloBase, instancias]) => {
+      const regex = new RegExp(`{${escapeRegExp(tituloBase)}}`, 'g');
+      let ocorrenciasEncontradas = 0;
+
+      console.log(`🔄 Processando instâncias de ${tituloBase}:`, instancias);
+
+      textoFinal = textoFinal.replace(regex, (match) => {
+        const valor = instancias[ocorrenciasEncontradas];
+        console.log(`🔄 Substituindo ocorrência ${ocorrenciasEncontradas} de {${tituloBase}}: ${match} -> ${valor}`);
+        ocorrenciasEncontradas++;
+        return valor !== undefined ? valor : match;
+      });
+    });
+
+    console.log('📝 Texto final:', textoFinal);
+
     // Se é um modelo (fraseTemporaria é null), processa como modelo
     if (!fraseTemporaria) {
       // Procura por "impressão:" ou "conclusão:" no texto processado
       const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
       const match = textoFinal.match(regex);
-      
+
       if (match) {
         // Se encontrou, extrai a conclusão
         const conclusao = match[1].trim();
@@ -716,7 +759,7 @@ function Laudos() {
       // Se é uma frase, processa normalmente
       setTexto(textoFinal);
     }
-    
+
     setModalVariaveisAberto(false);
   };
 
@@ -1119,6 +1162,10 @@ function Laudos() {
               aguardandoSelecao={aguardandoSelecao}
               aguardandoLinha={aguardandoLinha}
               aguardandoPosicaoAtual={aguardandoPosicaoAtual}
+              enableAutoSave={true}
+              autoSaveKey="laudos_editor_autoSave"
+              autoSaveInterval={5000}
+              showLoadButton={true}
             />
 
             {/* Botões de ação do laudo */}
