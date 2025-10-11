@@ -22,12 +22,17 @@ function MetodosSelect({ value, onChange, required = true, label = "Método" }) 
     fetchMetodos();
   }, []);
 
+  // Garante que value seja sempre um array de strings válidas
+  const safeValue = Array.isArray(value) 
+    ? value.filter(v => v !== null && v !== undefined && v !== '')
+    : [];
+
   return (
     <MultiSelect
       label={label}
       placeholder="Selecione os métodos"
       data={metodos}
-      value={value}
+      value={safeValue}
       onChange={onChange}
       searchable
       required={required}

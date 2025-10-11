@@ -43,6 +43,7 @@ import Register from './pages/Register';
 import ProtectedRoute from './components/ProtectedRoutes';
 import '@mantine/core/styles.css';
 import { MantineProvider } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 
 // Páginas
 import ModeloLaudo from './pages/ModeloLaudo';
@@ -50,10 +51,12 @@ import Frases from './pages/Frases';
 import Variaveis from './pages/Variaveis';
 import Laudos from './pages/Laudos';
 import IA from './pages/IA';
+import TransferirFrases from './pages/TransferirFrases';
 
 // Estilos
 import '@mantine/core/styles.css';
-import '@mantine/tiptap/styles.css';  
+import '@mantine/tiptap/styles.css';
+import '@mantine/notifications/styles.css';  
 
 function Logout() {
   localStorage.clear();
@@ -68,6 +71,7 @@ function RegisterAndLogout() {
 function App() {
   return (
     <MantineProvider>
+      <Notifications />
       <Routes>
         <Route path="/" element={
           <ProtectedRoute>
@@ -102,6 +106,12 @@ function App() {
         <Route path="/ia" element={
           <ProtectedRoute>
             <IA />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/transferir-frases" element={
+          <ProtectedRoute>
+            <TransferirFrases />
           </ProtectedRoute>
         } />
 

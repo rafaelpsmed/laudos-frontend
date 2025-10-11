@@ -103,7 +103,7 @@ function Frases() {
       setModeloId(modelo.id);
       
       // Busca o texto completo do modelo
-      api.get(`/api/modelos-laudo/${modelo.id}/`)
+      api.get(`/api/modelo_laudo/${modelo.id}/`)
         .then(response => {
           setTexto(response.data.texto || '');
         })
@@ -135,38 +135,38 @@ function Frases() {
     fetchFrases();
   }, []);
 
-  // Novo useEffect para buscar categorias sem métodos ao carregar a página
-  useEffect(() => {
-    const fetchCategoriasSemMetodos = async () => {
-      try {
-        const token = localStorage.getItem(ACCESS_TOKEN);
-        if (!token) {
-          console.error('Token não encontrado');
-          handleLogout();
-          return;
-        }
+  // Comentado temporariamente - endpoint não implementado no backend
+  // useEffect(() => {
+  //   const fetchCategoriasSemMetodos = async () => {
+  //     try {
+  //       const token = localStorage.getItem(ACCESS_TOKEN);
+  //       if (!token) {
+  //         console.error('Token não encontrado');
+  //         handleLogout();
+  //         return;
+  //       }
 
-        const config = {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        };
+  //       const config = {
+  //         headers: {
+  //           'Authorization': `Bearer ${token}`
+  //         }
+  //       };
         
-        const response = await api.get('/api/frases/categorias-sem-metodos/', config);
-        console.log('Resposta da API (categorias sem métodos):', response.data);
+  //       const response = await api.get('/api/frases/categorias-sem-metodos/', config);
+  //       console.log('Resposta da API (categorias sem métodos):', response.data);
         
-        if (response.data && Array.isArray(response.data.categorias)) {
-          setCategoriasFiltradas(response.data.categorias);
-        } else {
-          console.error('Resposta inválida do servidor:', response.data);
-        }
-      } catch (error) {
-        console.error('Erro ao buscar categorias sem métodos:', error);
-      }
-    };
+  //       if (response.data && Array.isArray(response.data.categorias)) {
+  //         setCategoriasFiltradas(response.data.categorias);
+  //       } else {
+  //         console.error('Resposta inválida do servidor:', response.data);
+  //       }
+  //     } catch (error) {
+  //       console.error('Erro ao buscar categorias sem métodos:', error);
+  //     }
+  //   };
 
-    fetchCategoriasSemMetodos();
-  }, []);
+  //   fetchCategoriasSemMetodos();
+  // }, []);
 
   // useEffect para carregar categorias sem modelo
   useEffect(() => {
@@ -216,19 +216,21 @@ function Frases() {
 
     try {
       if (!newValue || newValue.length === 0) {
-        console.log('Nenhum método selecionado, buscando categorias sem métodos');
-        // Se não houver método selecionado, busca categorias sem métodos
-        const response = await api.get('/api/frases/categorias-sem-metodos/');
-        console.log('Resposta categorias sem métodos:', response.data);
-        if (response.data && Array.isArray(response.data.categorias)) {
-          setCategoriasFiltradas([{
-            group: 'Categorias sem Método',
-            items: response.data.categorias.map(cat => ({
-              value: cat,
-              label: cat
-            }))
-          }]);
-        }
+        console.log('Nenhum método selecionado');
+        // Limpa as categorias quando não há método selecionado
+        setCategoriasFiltradas([]);
+        // Comentado - endpoint não implementado
+        // const response = await api.get('/api/frases/categorias-sem-metodos/');
+        // console.log('Resposta categorias sem métodos:', response.data);
+        // if (response.data && Array.isArray(response.data.categorias)) {
+        //   setCategoriasFiltradas([{
+        //     group: 'Categorias sem Método',
+        //     items: response.data.categorias.map(cat => ({
+        //       value: cat,
+        //       label: cat
+        //     }))
+        //   }]);
+        // }
       } else {
         // Busca o modelo selecionado pelos títulos disponíveis
         const modeloSelecionado = titulosDisponiveis.find(item => item.metodo === newValue[0]);
