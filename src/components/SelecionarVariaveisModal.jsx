@@ -32,7 +32,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   };
 
   useEffect(() => {
-    console.log('temMedida:', temMedida);
+    // console.log('temMedida:', temMedida);
     const buscarDetalhesVariaveis = async () => {
       try {
         const detalhes = await Promise.all(

@@ -16,16 +16,16 @@ function TituloCombobox({
   useEffect(() => {
     const fetchTitulos = async () => {
       try {
-        console.log('Buscando títulos com métodos:', metodosSelected);
+        // console.log('Buscando títulos com métodos:', metodosSelected);
         const response = await api.get('/api/modelo_laudo/');
-        console.log('Resposta da API:', response.data);
+        // console.log('Resposta da API:', response.data);
         
         if (metodosSelected && metodosSelected.length > 0) {
           // Filtra os títulos pelos métodos selecionados
           const modelosFiltrados = response.data.filter(modelo => 
             metodosSelected.includes(modelo.metodo.toString())
           );
-          console.log('Modelos filtrados:', modelosFiltrados);
+          // console.log('Modelos filtrados:', modelosFiltrados);
           setTitulosDisponiveis(modelosFiltrados);
         } else {
           // Se não há método selecionado, mostra todos os modelos
@@ -41,7 +41,7 @@ function TituloCombobox({
   }, [metodosSelected, setTitulosDisponiveis]);
 
   const handleTituloSelect = (selectedTitulo) => {
-    console.log('Título selecionado:', selectedTitulo);
+    // console.log('Título selecionado:', selectedTitulo);
     onChange(selectedTitulo);
     onTituloSelect(selectedTitulo);
     combobox.closeDropdown();

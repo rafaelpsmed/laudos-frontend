@@ -48,9 +48,9 @@ function ModeloLaudo() {
   useEffect(() => {
     const fetchTitulosInicial = async () => {
       try {
-        console.log('Buscando títulos iniciais...');
+        // console.log('Buscando títulos iniciais...');
         const response = await api.get('/api/modelo_laudo/');
-        console.log('Resposta da API (títulos iniciais):', response.data);
+        // console.log('Resposta da API (títulos iniciais):', response.data);
         if (response.data && Array.isArray(response.data)) {
           setTitulosDisponiveis(response.data);
         } else {
@@ -69,16 +69,16 @@ function ModeloLaudo() {
   useEffect(() => {
     const fetchTitulos = async () => {
       try {
-        console.log('Métodos selecionados:', metodosSelected);
+        // console.log('Métodos selecionados:', metodosSelected);
         const response = await api.get('/api/modelo_laudo/');
-        console.log('Resposta da API (todos os títulos):', response.data);
+        // console.log('Resposta da API (todos os títulos):', response.data);
         
         if (metodosSelected.length > 0) {
           // Filtra os títulos disponíveis pelos métodos selecionados
           const modelosFiltrados = response.data.filter(modelo => 
             metodosSelected.includes(modelo.metodo.toString())
           );
-          console.log('Modelos filtrados:', modelosFiltrados);
+          // console.log('Modelos filtrados:', modelosFiltrados);
           setTitulosDisponiveis(modelosFiltrados);
         } else {
           // Se não há método selecionado, mostra todos os modelos
@@ -95,7 +95,7 @@ function ModeloLaudo() {
 
   // Modifique o MultiSelect para limpar o título quando mudar a seleção
   const handleMetodosChange = (newValue) => {
-    console.log('Novos métodos selecionados:', newValue);
+    // console.log('Novos métodos selecionados:', newValue);
     setMetodosSelected(newValue);
     setTitulo(''); // Limpa o título quando mudar os métodos
     setModeloId(null); // Limpa o modeloId quando os métodos são alterados
@@ -109,7 +109,7 @@ function ModeloLaudo() {
       const modeloSelecionado = titulosDisponiveis.find(item => item.titulo === titulo);
       if (modeloSelecionado) {
         const response = await api.get(`/api/modelo_laudo/${modeloSelecionado.id}/`);
-        console.log('Resposta da API:', response.data);
+        // console.log('Resposta da API:', response.data);
         
         // Atualiza o estado com os dados do modelo
         setTexto(response.data.texto || '');
@@ -123,8 +123,8 @@ function ModeloLaudo() {
         setModeloId(modeloSelecionado.id);
         
         // Log para debug
-        console.log('ModeloId após atualização:', modeloSelecionado.id);
-        console.log('Método selecionado:', metodoId);
+        // console.log('ModeloId após atualização:', modeloSelecionado.id);
+        // console.log('Método selecionado:', metodoId);
       }
     } catch (error) {
       console.error('Erro ao buscar modelo completo:', error);
@@ -167,7 +167,7 @@ function ModeloLaudo() {
       };
 
       const response = await api.post('/api/modelo_laudo/', modeloData);
-      console.log('Resposta da API:', response.data);
+      // console.log('Resposta da API:', response.data);
       
       setTitulo('');
       setMetodosSelected([]);
@@ -215,7 +215,7 @@ function ModeloLaudo() {
       };
 
       const response = await api.put(`/api/modelo_laudo/${modeloId}/`, modeloData);
-      console.log('Modelo atualizado:', response.data);
+      // console.log('Modelo atualizado:', response.data);
       
       // Atualiza a lista de títulos
       const responseTitulos = await api.get('/api/modelo_laudo/');
@@ -273,14 +273,14 @@ function ModeloLaudo() {
     try {
       // Se houver frases vinculadas, exclui cada uma delas primeiro
       if (frasesVinculadas.length > 0) {
-        console.log(`Excluindo ${frasesVinculadas.length} frases vinculadas`);
+        // console.log(`Excluindo ${frasesVinculadas.length} frases vinculadas`);
         for (const frase of frasesVinculadas) {
           await api.delete(`/api/frases/${frase.id}/`);
         }
       }
 
       // Depois exclui o modelo
-      console.log('Excluindo modelo com ID:', modeloId);
+      // console.log('Excluindo modelo com ID:', modeloId);
       await api.delete(`/api/modelo_laudo/${modeloId}/`);
       
       // Atualiza a lista de títulos

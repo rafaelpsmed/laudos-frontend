@@ -63,7 +63,7 @@ function Laudos() {
       
       // Se não houver valor selecionado, limpa os campos e retorna
       if (!newValue || !Array.isArray(newValue) || newValue.length === 0) {
-        console.log('Nenhum método selecionado');
+        // console.log('Nenhum método selecionado');
         setCategoriasFiltradas([]);
         setTreeData([]);
         return;
@@ -77,7 +77,7 @@ function Laudos() {
       
       // Se não houver IDs válidos após o processamento, retorna
       if (metodosIds.length === 0) {
-        console.log('Nenhum ID válido após processamento');
+        // console.log('Nenhum ID válido após processamento');
         setCategoriasFiltradas([]);
         setTreeData([]);
         return;
@@ -194,7 +194,7 @@ function Laudos() {
         !f.modelos_laudo || f.modelos_laudo.length === 0
       );
 
-      console.log('Categorias recebidas:', frasesDoModelo.map(frase => frase.categoriaFrase));
+      // console.log('Categorias recebidas:', frasesDoModelo.map(frase => frase.categoriaFrase));
       
       // Organiza as frases por categoria
       const categorias = [...new Set(frasesDoModelo.map(frase => frase.categoriaFrase))];
@@ -354,12 +354,12 @@ function Laudos() {
 
           case 'posicaoAtual':
             if (editor && posicaoCursor !== null) {
-              console.log('🔍 Inserindo na posição atual:', posicaoCursor);
-              console.log('🔍 Frase base:', fraseBase);
+              // console.log('🔍 Inserindo na posição atual:', posicaoCursor);
+              // console.log('🔍 Frase base:', fraseBase);
               // Insere o conteúdo na posição passada como parâmetro
               editor.commands.setTextSelection(posicaoCursor);
               editor.commands.insertContent(fraseBase);
-              console.log('✅ Frase inserida com sucesso');
+              // console.log('✅ Frase inserida com sucesso');
               // Atualiza o texto após a inserção
               novoTexto = editor.getHTML();
             } else {
@@ -457,7 +457,8 @@ function Laudos() {
           // Se existe uma conclusão do modelo, substitui ela
           if (conclusaoDoModelo) {
             const conteudoAtual = editor.getHTML();
-            const novoConteudo = conteudoAtual.replace(conclusaoDoModelo, conclusaoFormatada);
+            // const novoConteudo = conteudoAtual.replace(conclusaoDoModelo, conclusaoFormatada);
+            const novoConteudo = conteudoAtual.replace(conclusaoDoModelo,'<br>' + conclusaoFormatada);
             editor.commands.setContent(novoConteudo);
             // Limpa a conclusão do modelo após substituir
             setConclusaoDoModelo('');
@@ -465,21 +466,25 @@ function Laudos() {
             // Verifica se o texto da conclusão já existe no texto atual
             const textoAtual = novoTexto.replace(/<[^>]*>/g, '');
             const textoConclusao = conclusaoFormatada.replace(/<[^>]*>/g, '');
+            const conclusaoPluralizada = pluralize(textoConclusao);
             
-            if (!textoAtual.includes(textoConclusao)) {
-              // Se não existe, adiciona a nova conclusão no final
+            // Verifica se a conclusão (singular OU plural) já existe
+            const conclusaoExisteSingular = textoAtual.includes(textoConclusao);
+            const conclusaoExistePlural = textoAtual.includes(conclusaoPluralizada);
+            
+            if (!conclusaoExisteSingular && !conclusaoExistePlural) {
+              // Se não existe (nem singular nem plural), adiciona a nova conclusão no final
               editor.commands.setTextSelection(editor.state.doc.content.size);
               editor.commands.insertContent('<br>' + conclusaoFormatada);
-            } else {
-              // Se já existe, pluraliza a conclusão existente no texto
-              const posicaoConclusao = textoAtual.indexOf(textoConclusao);
-              const conclusaoPluralizada = pluralize(textoConclusao);
+            } else if (conclusaoExisteSingular && !conclusaoExistePlural) {
+              // Se existe apenas a versão singular, pluraliza
               const conclusaoPluralizadaFormatada = aplicarFormatacao(conclusaoPluralizada);
               
               // Substitui a conclusão existente pela versão pluralizada
               const novoConteudo = novoTexto.replace(textoConclusao, conclusaoPluralizadaFormatada);
               editor.commands.setContent(novoConteudo);
             }
+            // Se já existe a versão plural (conclusaoExistePlural === true), não faz nada
           }
           
           // Atualiza o texto após a manipulação
@@ -526,26 +531,26 @@ function Laudos() {
     }
 
     if (tipoInsercao === 'posicaoAtual') {
-      console.log('🚀 Iniciando inserção na posição atual');
+      // console.log('🚀 Iniciando inserção na posição atual');
       // Captura a posição atual do cursor
       const editor = editorRef.current?.editor;
       if (editor) {
         const { from } = editor.state.selection;
-        console.log('📍 Posição do cursor capturada:', from);
+        // console.log('📍 Posição do cursor capturada:', from);
 
         // Processa a frase imediatamente na posição capturada
         if (fraseTemporaria) {
-          console.log('📝 Frase temporária encontrada:', fraseTemporaria.tituloFrase);
+          // console.log('📝 Frase temporária encontrada:', fraseTemporaria.tituloFrase);
           // Se tem medida, substitui o '$' na frase base antes de processar
           if (medida) {
             fraseTemporaria.frase.fraseBase = fraseTemporaria.frase.fraseBase.replace('$', medida);
-            console.log('📏 Medida aplicada:', medida);
+            // console.log('📏 Medida aplicada:', medida);
           }
-          console.log('⚙️ Chamando processarFrase...');
+          // console.log('⚙️ Chamando processarFrase...');
           // Passa a posição diretamente como parâmetro
           await processarFrase(fraseTemporaria, 'posicaoAtual', null, from);
           setFraseTemporaria(null);
-          console.log('✅ Processamento concluído');
+          // console.log('✅ Processamento concluído');
         } else {
           console.error('❌ Frase temporária não encontrada');
         }
@@ -673,9 +678,9 @@ function Laudos() {
   };
 
     const handleVariaveisSelecionadas = (valoresSelecionados) => {
-    console.log('🔄 handleVariaveisSelecionadas chamado com:', valoresSelecionados);
+    // console.log('🔄 handleVariaveisSelecionadas chamado com:', valoresSelecionados);
     let textoFinal = textoTemporario;
-    console.log('📝 Texto original:', textoFinal);
+    // console.log('📝 Texto original:', textoFinal);
 
     // Função para escapar caracteres especiais em regex
     const escapeRegExp = (string) => {
@@ -700,7 +705,7 @@ function Laudos() {
         const instanciaIndex = parseInt(partes[partes.length - 1]);
         const tituloBase = partes.slice(0, -1).join('_');
 
-        console.log(`🔢 Variável por instância: ${chave} -> ${tituloBase}[${instanciaIndex}] = ${valor}`);
+        // console.log(`🔢 Variável por instância: ${chave} -> ${tituloBase}[${instanciaIndex}] = ${valor}`);
 
         if (!variaveisPorTitulo[tituloBase]) {
           variaveisPorTitulo[tituloBase] = [];
@@ -712,14 +717,14 @@ function Laudos() {
       }
     });
 
-    console.log('📊 Variáveis normais:', variaveisNormais);
-    console.log('📊 Variáveis por título:', variaveisPorTitulo);
+    // console.log('📊 Variáveis normais:', variaveisNormais);
+    // console.log('📊 Variáveis por título:', variaveisPorTitulo);
 
     // Processa variáveis normais primeiro
     Object.entries(variaveisNormais).forEach(([chave, valor]) => {
       const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
       textoFinal = textoFinal.replace(regex, valor);
-      console.log(`✅ Substituição normal: {${chave}} -> ${valor}`);
+      // console.log(`✅ Substituição normal: {${chave}} -> ${valor}`);
     });
 
     // Processa variáveis por instância
@@ -727,17 +732,17 @@ function Laudos() {
       const regex = new RegExp(`{${escapeRegExp(tituloBase)}}`, 'g');
       let ocorrenciasEncontradas = 0;
 
-      console.log(`🔄 Processando instâncias de ${tituloBase}:`, instancias);
+      // console.log(`🔄 Processando instâncias de ${tituloBase}:`, instancias);
 
       textoFinal = textoFinal.replace(regex, (match) => {
         const valor = instancias[ocorrenciasEncontradas];
-        console.log(`🔄 Substituindo ocorrência ${ocorrenciasEncontradas} de {${tituloBase}}: ${match} -> ${valor}`);
+        // console.log(`🔄 Substituindo ocorrência ${ocorrenciasEncontradas} de {${tituloBase}}: ${match} -> ${valor}`);
         ocorrenciasEncontradas++;
         return valor !== undefined ? valor : match;
       });
     });
 
-    console.log('📝 Texto final:', textoFinal);
+    // console.log('📝 Texto final:', textoFinal);
 
     // Se é um modelo (fraseTemporaria é null), processa como modelo
     if (!fraseTemporaria) {
@@ -910,7 +915,7 @@ function Laudos() {
     const buscarTodasFrases = async () => {
       try {
         const response = await api.get('/api/frases/');
-        console.log('Frases recebidas:', response.data);
+        // console.log('Frases recebidas:', response.data);
         setTodasFrases(response.data);
       } catch (error) {
         console.error('Erro ao buscar frases:', error);
@@ -1020,7 +1025,7 @@ function Laudos() {
         f.modelos_laudo && f.modelos_laudo.includes(modeloSelecionado.id)
       );
 
-      console.log('Categorias recebidas:', frasesDoModelo.map(frase => frase.categoriaFrase));
+      // console.log('Categorias recebidas:', frasesDoModelo.map(frase => frase.categoriaFrase));
       
       // Organiza as frases por categoria
       const categorias = [...new Set(frasesDoModelo.map(frase => frase.categoriaFrase))];

@@ -1,12 +1,13 @@
 import { Container, Title, Text, Paper, Group, Button, Textarea, Stack, Divider, Alert, NavLink, Checkbox, TextInput, Grid } from '@mantine/core';
 import { IconBrain, IconSparkles, IconRobot, IconWand, IconAlertCircle, IconCheck, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff } from '@tabler/icons-react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
 import TextEditor from '../components/TextEditor';
 import MetodosSelect from '../components/MetodosSelect';
 import TituloCombobox from '../components/TituloCombobox';
 import api from '../api';
 import { marked } from 'marked';
+import { useAudioTranscription } from '../utils/useAudioTranscription';
 
 function IA() {
     const [showGeracaoLaudo, setShowGeracaoLaudo] = useState(false);
@@ -44,36 +45,59 @@ function IA() {
     // Campo de ajustes
     const [ajustesText, setAjustesText] = useState('');
 
-    // Estados para funcionalidade de áudio para texto
-    const [ultimoResultadoIndex, setUltimoResultadoIndex] = useState(0);
-    const [isRecordingAudio, setIsRecordingAudio] = useState(false);
-    const [recognitionAudio, setRecognitionAudio] = useState(null);
-    const [previewTextAudio, setPreviewTextAudio] = useState('');
+    // ============================================================
+    // ✅ NOVO: Hook de transcrição de áudio
+    // Substitui todo o código antigo (funções e useEffects comentados abaixo)
+    // ============================================================
+    const {
+        isRecording: isRecordingAudio,
+        previewText: previewTextAudio,
+        toggleRecording: toggleRecordingAudio
+    } = useAudioTranscription({
+        textoState: textoAnalise,
+        setTextoState: setTextoAnalise,
+        atalhoTeclado: 'Shift+A',
+        pauseDelay: 2000
+    });
+
+    // ============================================================
+    // CÓDIGO ANTIGO COMENTADO - AGORA GERENCIADO PELO HOOK
+    // ============================================================
+    // Estados para funcionalidade de áudio para texto (ANTIGO - não usar)
+    // const [ultimoResultadoIndex, setUltimoResultadoIndex] = useState(0);
+    // const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+    // const [recognitionAudio, setRecognitionAudio] = useState(null);
+    // const [previewTextAudio, setPreviewTextAudio] = useState('');
+    // const paradaIntencionalRef = useRef(false);
     
 
-    // Função para copiar texto para a área de transferência
-    const copiarParaAreaTransferencia = async (texto) => {
+    // Função para copiar texto formatado (HTML) para a área de transferência
+    const copiarParaAreaTransferencia = async (htmlFormatado) => {
         try {
-            await navigator.clipboard.writeText(texto);
+            // Cria um ClipboardItem com HTML e texto puro
+            const blob = new Blob([htmlFormatado], { type: 'text/html' });
+            const textoPlano = htmlFormatado.replace(/<[^>]*>/g, ''); // Remove tags HTML para texto puro
+            const blobTexto = new Blob([textoPlano], { type: 'text/plain' });
+            
+            const clipboardItem = new ClipboardItem({
+                'text/html': blob,
+                'text/plain': blobTexto
+            });
+            
+            await navigator.clipboard.write([clipboardItem]);
             setLaudoCopiado(true);
-            console.log('Laudo copiado para área de transferência');
             
             // Resetar a mensagem após 3 segundos
             setTimeout(() => {
                 setLaudoCopiado(false);
             }, 3000);
         } catch (error) {
-            console.error('Erro ao copiar para área de transferência:', error);
-            // Fallback para navegadores mais antigos
+            console.error('Erro ao copiar HTML para área de transferência:', error);
+            // Fallback: tentar copiar apenas o texto puro
             try {
-                const textArea = document.createElement('textarea');
-                textArea.value = texto;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
+                const textoPlano = htmlFormatado.replace(/<[^>]*>/g, '');
+                await navigator.clipboard.writeText(textoPlano);
                 setLaudoCopiado(true);
-                console.log('Laudo copiado usando fallback');
                 
                 setTimeout(() => {
                     setLaudoCopiado(false);
@@ -169,169 +193,155 @@ function IA() {
         }
     };
 
-    // Função para alternar gravação de áudio
-    const toggleRecordingAudio = () => {
-        if (!recognitionAudio) {
-            alert('Seu navegador não suporta reconhecimento de voz.');
-            return;
-        }
+    // ============================================================
+    // FUNÇÃO toggleRecordingAudio - MOVIDA PARA useAudioTranscription.js
+    // AGORA GERENCIADO PELO HOOK ACIMA
+    // ============================================================
+    // const toggleRecordingAudio = useCallback(() => {
+    //     if (!recognitionAudio) {
+    //         alert('Seu navegador não suporta reconhecimento de voz.');
+    //         return;
+    //     }
 
-        if (isRecordingAudio) {
-            recognitionAudio.stop();
-            setIsRecordingAudio(false);
-            setPreviewTextAudio('');
-            setUltimoResultadoIndex(0); // Resetar índice ao parar
-            console.log('Gravação parada manualmente pelo usuário');
-        } else {
-            try {
-                setUltimoResultadoIndex(0); // Resetar índice ao iniciar
-                recognitionAudio.start();
-                setIsRecordingAudio(true);
-                setPreviewTextAudio('');
-                console.log('Gravação iniciada - reconhecimento contínuo ativo');
-            } catch (error) {
-                if (error.name === 'NotAllowedError') {
-                    alert('Por favor, permita o acesso ao microfone para usar esta função.');
-                } else {
-                    console.error('Erro ao iniciar gravação:', error);
-                    alert('Erro ao iniciar a gravação. Por favor, tente novamente.');
-                }
-                setIsRecordingAudio(false);
-            }
-        }
-    };
+    //     if (isRecordingAudio) {
+    //         paradaIntencionalRef.current = true;
+    //         recognitionAudio.stop();
+    //         setIsRecordingAudio(false);
+    //         setPreviewTextAudio('');
+    //         setUltimoResultadoIndex(0);
+    //     } else {
+    //         try {
+    //             paradaIntencionalRef.current = false;
+    //             setUltimoResultadoIndex(0);
+    //             recognitionAudio.start();
+    //             setIsRecordingAudio(true);
+    //             setPreviewTextAudio('');
+    //         } catch (error) {
+    //             if (error.name === 'NotAllowedError') {
+    //                 alert('Por favor, permita o acesso ao microfone para usar esta função.');
+    //             } else {
+    //                 console.error('Erro ao iniciar gravação:', error);
+    //                 alert('Erro ao iniciar a gravação. Por favor, tente novamente.');
+    //             }
+    //             setIsRecordingAudio(false);
+    //         }
+    //     }
+    // }, [recognitionAudio, isRecordingAudio]);
 
- // Função para adicionar pontuação
-    const adicionarPontuacao = (texto) => {
-        let textoProcessado = texto.trim();
-        
-            // Substitui palavras por pontuação
-        // textoProcessado = textoProcessado.replace(/\b vírgula\b/gi, ',');
-        // textoProcessado = textoProcessado.replace(/\b virgula\b/gi, ',');
-        //explicação: \b é um ancorador que indica que a palavra deve começar no início da linha ou no final da linha
-        textoProcessado = textoProcessado.replace(/vírgula\b/gi, ',');
-        textoProcessado = textoProcessado.replace(/virgula\b/gi, ',');
-        textoProcessado = textoProcessado.replace(/ponto final\b/gi, '.');
-        textoProcessado = textoProcessado.replace(/ponto e vírgula\b/gi, ';');
-        textoProcessado = textoProcessado.replace(/ponto e virgula\b/gi, ';');
-        textoProcessado = textoProcessado.replace(/hífen\b/gi, '-');
-        textoProcessado = textoProcessado.replace(/hifen\b/gi, '-');
-        textoProcessado = textoProcessado.replace(/nova linha\b/gi, '\n');
-        textoProcessado = textoProcessado.replace(/próxima linha\b/gi, '\n');
-        textoProcessado = textoProcessado.replace(/parágrafo\b/gi, '\n');
-        
-        // Capitaliza primeira letra após ponto final
-        textoProcessado = textoProcessado.replace(/\.\s+([a-z])/g, (match, letter) => {
-            return '. ' + letter.toUpperCase();
-        });
-        
-        // Capitaliza primeira letra após hífen
-        textoProcessado = textoProcessado.replace(/-\s+([a-z])/g, (match, letter) => {
-            return '- ' + letter.toUpperCase();
-        });
-        
-        return textoProcessado + ' ';
-    };
+    // ============================================================
+    // FUNÇÃO adicionarPontuacao - MOVIDA PARA useAudioTranscription.js
+    // AGORA GERENCIADO PELO HOOK ACIMA
+    // ============================================================
+    // const adicionarPontuacao = (texto) => {
+    //     let textoProcessado = texto.trim();
+    //     textoProcessado = textoProcessado.replace(/vírgula\b/gi, ',');
+    //     textoProcessado = textoProcessado.replace(/virgula\b/gi, ',');
+    //     textoProcessado = textoProcessado.replace(/ponto final\b/gi, '.');
+    //     textoProcessado = textoProcessado.replace(/ponto e vírgula\b/gi, ';');
+    //     textoProcessado = textoProcessado.replace(/ponto e virgula\b/gi, ';');
+    //     textoProcessado = textoProcessado.replace(/hífen\b/gi, '-');
+    //     textoProcessado = textoProcessado.replace(/hifen\b/gi, '-');
+    //     textoProcessado = textoProcessado.replace(/nova linha\b/gi, '\n');
+    //     textoProcessado = textoProcessado.replace(/próxima linha\b/gi, '\n');
+    //     textoProcessado = textoProcessado.replace(/parágrafo\b/gi, '\n');
+    //     textoProcessado = textoProcessado.replace(/\.\s+([a-z])/g, (match, letter) => {
+    //         return '. ' + letter.toUpperCase();
+    //     });
+    //     textoProcessado = textoProcessado.replace(/-\s+([a-z])/g, (match, letter) => {
+    //         return '- ' + letter.toUpperCase();
+    //     });
+    //     return textoProcessado + ' ';
+    // };
 
-    // Implementação do reconhecimento de voz para a textarea
-    useEffect(() => {
-        if ('webkitSpeechRecognition' in window) {
-            const recognition = new window.webkitSpeechRecognition();
-            recognition.continuous = true; // Manter reconhecimento contínuo
-            recognition.interimResults = true;
-            recognition.lang = 'pt-BR';
+    // ============================================================
+    // ATALHO DE TECLADO - MOVIDO PARA useAudioTranscription.js
+    // AGORA GERENCIADO PELO HOOK ACIMA
+    // ============================================================
+    // useEffect(() => {
+    //     const handleKeyDown = (event) => {
+    //         if (event.key === 'Alt' || event.key === 'Control' || event.key === 'Shift' || event.key === 'Meta') {
+    //             return;
+    //         }
+    //         if (event.shiftKey && (event.key.toLowerCase() === 'a' || event.code === 'KeyA')) {
+    //             event.preventDefault();
+    //             toggleRecordingAudio();
+    //         }
+    //     };
+    //     window.addEventListener('keydown', handleKeyDown);
+    //     return () => {
+    //         window.removeEventListener('keydown', handleKeyDown);
+    //     };
+    // }, [toggleRecordingAudio]);
 
-            recognition.onresult = (event) => {
-                let finalTranscript = '';
-                let interimTranscript = '';
+    // ============================================================
+    // RECONHECIMENTO DE VOZ - MOVIDO PARA useAudioTranscription.js
+    // AGORA GERENCIADO PELO HOOK ACIMA
+    // ============================================================
+    // useEffect(() => {
+    //     if ('webkitSpeechRecognition' in window) {
+    //         const recognition = new window.webkitSpeechRecognition();
+    //         recognition.continuous = true;
+    //         recognition.interimResults = true;
+    //         recognition.lang = 'pt-BR';
 
-                // Processa apenas os resultados novos (não processados anteriormente)
-                for (let i = ultimoResultadoIndex; i < event.results.length; i++) {
-                    const result = event.results[i];
-                    const transcript = result[0].transcript;
+    //         recognition.onresult = (event) => {
+    //             let finalTranscript = '';
+    //             let interimTranscript = '';
+    //             for (let i = ultimoResultadoIndex; i < event.results.length; i++) {
+    //                 const result = event.results[i];
+    //                 const transcript = result[0].transcript;
+    //                 if (result.isFinal) {
+    //                     finalTranscript += transcript + ' ';
+    //                 } else {
+    //                     interimTranscript += transcript;
+    //                 }
+    //             }
+    //             setUltimoResultadoIndex(event.results.length);
+    //             let previewText = '';
+    //             if (finalTranscript.trim()) {
+    //                 const textoProcessado = adicionarPontuacao(finalTranscript.trim());
+    //                 previewText = textoProcessado + interimTranscript;
+    //             } else {
+    //                 previewText = interimTranscript;
+    //             }
+    //             setPreviewTextAudio(previewText);
+    //             if (finalTranscript.trim()) {
+    //                 const textoAtualTextarea = textoAnalise;
+    //                 const textoProcessado = adicionarPontuacao(finalTranscript.trim());
+    //                 const textoFinal = textoAtualTextarea + ' ' + textoProcessado;
+    //                 setTextoAnalise(textoFinal);
+    //             }
+    //         };
 
-                    if (result.isFinal) {
-                        finalTranscript += transcript + ' ';
-                    } else {
-                        interimTranscript += transcript;
-                    }
-                }
+    //         recognition.onerror = (event) => {
+    //             if (event.error === 'aborted') {
+    //                 paradaIntencionalRef.current = true;
+    //             } else {
+    //                 console.error('Erro no reconhecimento de voz:', event.error);
+    //             }
+    //             setIsRecordingAudio(false);
+    //         };
 
-                // Log para debug
-                if (finalTranscript.trim() || interimTranscript.trim()) {
-                    console.log('Reconhecimento ativo - processando áudio...');
-                    console.log(`Resultados: ${event.results.length}, Índice atual: ${ultimoResultadoIndex}`);
-                    console.log(`Final: "${finalTranscript.trim()}", Intermediário: "${interimTranscript.trim()}"`);
-                }
+    //         recognition.onend = () => {
+    //             if (paradaIntencionalRef.current) {
+    //                 setIsRecordingAudio(false);
+    //                 return;
+    //             }
+    //             if (isRecordingAudio) {
+    //                 setTimeout(() => {
+    //                     try {
+    //                         recognition.start();
+    //                     } catch (error) {
+    //                         console.error('Erro ao reiniciar reconhecimento:', error);
+    //                         setIsRecordingAudio(false);
+    //                     }
+    //                 }, 100);
+    //             }
+    //         };
 
-                // Atualiza o índice do último resultado processado
-                setUltimoResultadoIndex(event.results.length);
-
-                // Atualiza o preview com o texto atual
-                // Se há resultado final, mostra o texto processado + intermediário
-                // Se não há resultado final, mostra apenas o intermediário
-                let previewText = '';
-                if (finalTranscript.trim()) {
-                    const textoProcessado = adicionarPontuacao(finalTranscript.trim());
-                    previewText = textoProcessado + interimTranscript;
-                } else {
-                    previewText = interimTranscript;
-                }
-                setPreviewTextAudio(previewText);
-
-                // Se há resultado final, insere na textarea
-                if (finalTranscript.trim()) {
-                    // Captura o texto atual da textarea
-                    const textoAtualTextarea = textoAnalise;
-                    
-                    // Processa o texto falado (adiciona pontuação)
-                    const textoProcessado = adicionarPontuacao(finalTranscript.trim());
-
-                    console.log("=== DEBUG ÁUDIO PARA TEXTO ===");
-                    console.log("Texto atual da textarea:", textoAtualTextarea);
-                    console.log("Texto falado (processado):", textoProcessado);
-                    
-                    // Adiciona o texto processado ao final da textarea
-                    const textoFinal = textoAtualTextarea + ' ' + textoProcessado;
-                    setTextoAnalise(textoFinal);
-                    
-                    console.log("Texto final da textarea:", textoFinal);
-                    console.log("================================");
-
-                    // NÃO limpa o preview - mantém para continuar mostrando em tempo real
-                    // setPreviewTextAudio(''); // REMOVIDO
-                    
-                    // Com continuous: true, o reconhecimento continua automaticamente
-                    // Não é necessário reiniciar ou resetar índices
-                }
-            };
-
-            recognition.onerror = (event) => {
-                console.error('Erro no reconhecimento de voz:', event.error);
-                setIsRecordingAudio(false);
-            };
-
-            recognition.onend = () => {
-                console.log('Reconhecimento de áudio terminou');
-                // Com continuous: true, o reconhecimento deve continuar automaticamente
-                // Se parou, pode ser um erro ou o usuário parou manualmente
-                if (isRecordingAudio) {
-                    console.log('Reconhecimento parou inesperadamente - tentando reiniciar...');
-                    // Apenas em caso de erro, tenta reiniciar uma vez
-                    setTimeout(() => {
-                        try {
-                            recognition.start();
-                        } catch (error) {
-                            console.error('Erro ao reiniciar reconhecimento:', error);
-                            setIsRecordingAudio(false);
-                        }
-                    }, 100);
-                }
-            };
-
-            setRecognitionAudio(recognition);
-        }
-    }, [textoAnalise, isRecordingAudio, ultimoResultadoIndex]);
+    //         setRecognitionAudio(recognition);
+    //     }
+    // }, [textoAnalise, isRecordingAudio, ultimoResultadoIndex]);
 
 
 
@@ -486,8 +496,6 @@ function IA() {
 
                     // Mover cursor para o início
                     editor.commands.setTextSelection(0);
-
-                    console.log('Laudo inserido no editor com formatação HTML rica');
                 } catch (error) {
                     console.error('Erro ao aplicar formatação, inserindo texto simples:', error);
                     // Fallback: inserir texto simples
@@ -595,8 +603,6 @@ function IA() {
 
                     // Mover cursor para o início
                     editor.commands.setTextSelection(0);
-
-                    console.log('Sugestões inseridas no editor com formatação HTML rica');
                 } catch (error) {
                     console.error('Erro ao aplicar formatação, inserindo texto simples:', error);
                     // Fallback: inserir texto simples
@@ -625,13 +631,9 @@ function IA() {
             return;
         }
 
-        // Limpar preview text e parar gravação ao gerar laudo
-        if (isRecordingAudio && recognitionAudio) {
-            recognitionAudio.stop();
-            setIsRecordingAudio(false);
-            setPreviewTextAudio('');
-            setUltimoResultadoIndex(0);
-            console.log('Gravação parada automaticamente ao gerar laudo');
+        // Para gravação ao gerar laudo (se estiver gravando)
+        if (isRecordingAudio) {
+            toggleRecordingAudio(); // O hook gerencia a parada corretamente
         }
 
         setIsGeneratingAnalise(true);
@@ -658,11 +660,15 @@ function IA() {
 
                      // Mover cursor para o início
                      editor.commands.setTextSelection(0);
-
-                     console.log('Laudo de radiologia inserido no editor com formatação HTML rica');
                      
-                     // Copiar o laudo para a área de transferência automaticamente
-                     copiarParaAreaTransferencia(laudoGerado);
+                     // Aguardar o editor processar o conteúdo antes de copiar
+                     setTimeout(() => {
+                         // Obter o HTML formatado do editor após o processamento
+                         const htmlDoEditor = editor.getHTML();
+                         
+                         // Copiar o HTML formatado para a área de transferência
+                         copiarParaAreaTransferencia(htmlDoEditor);
+                     }, 100);
                 } catch (error) {
                     console.error('Erro ao aplicar formatação, inserindo texto simples:', error);
                     // Fallback: inserir texto simples
@@ -978,30 +984,29 @@ function IA() {
                                      <Group justify="space-between" align="center">
                                          <Text size="sm" fw={500}>Informações do exame</Text>
                                          <Group gap="xs">
-                                             <Button
-                                                 size="xs"
-                                                 variant={isRecordingAudio ? "filled" : "outline"}
-                                                 color={isRecordingAudio ? "red" : "blue"}
-                                                 leftSection={isRecordingAudio ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
-                                                 onClick={toggleRecordingAudio}
-                                                 disabled={!recognitionAudio}
-                                             >
-                                                 {isRecordingAudio ? 'Parar Gravação' : 'Gravar Áudio'}
-                                             </Button>
-                                             <Button
-                                                 size="xs"
-                                                 variant="outline"
-                                                 color="gray"
-                                                 leftSection={<IconFile size={16} />}
-                                                 onClick={() => {
-                                                     setTextoAnalise('');
-                                                     setPreviewTextAudio('');
-                                                     console.log('Textarea limpa para nova gravação');
-                                                 }}
-                                                 disabled={!textoAnalise.trim()}
-                                             >
-                                                 Limpar Texto
-                                             </Button>
+                                           <Button
+                                               size="xs"
+                                               variant={isRecordingAudio ? "filled" : "outline"}
+                                               color={isRecordingAudio ? "red" : "blue"}
+                                               leftSection={isRecordingAudio ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
+                                               onClick={toggleRecordingAudio}
+                                               title="Atalho: Shift+A | Inserção rápida: Enter"
+                                           >
+                                               {isRecordingAudio ? 'Parar Gravação (Shift+A)' : 'Gravar Áudio (Shift+A)'}
+                                           </Button>
+                                            <Button
+                                                size="xs"
+                                                variant="outline"
+                                                color="gray"
+                                                leftSection={<IconFile size={16} />}
+                                                onClick={() => {
+                                                    setTextoAnalise('');
+                                                    // Preview é gerenciado automaticamente pelo hook
+                                                }}
+                                                disabled={!textoAnalise.trim()}
+                                            >
+                                                Limpar Texto
+                                            </Button>
                                          </Group>
                                      </Group>
                                      
@@ -1077,13 +1082,11 @@ function IA() {
                                                     const editor = editorAnaliseRef.current?.editor;
                                                     if (!editor) return;
                                                     
+                                                    // Obter o HTML formatado do editor
                                                     const htmlContent = editor.getHTML();
-                                                    await navigator.clipboard.writeText(htmlContent);
-                                                    setLaudoCopiado(true);
                                                     
-                                                    setTimeout(() => {
-                                                        setLaudoCopiado(false);
-                                                    }, 3000);
+                                                    // Usar a função que copia HTML formatado
+                                                    await copiarParaAreaTransferencia(htmlContent);
                                                 } catch (error) {
                                                     console.error('Erro ao copiar laudo:', error);
                                                 }

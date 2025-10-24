@@ -20,6 +20,9 @@ import { IconArrowBackUp, IconArrowForwardUp, IconMicrophone, IconMicrophoneOff,
 // Função para pluralizar palavras
 import pluralize from '../utils/pluralizar';
 
+// Função para transcrição de áudio
+import { useAudioTranscription } from '../utils/useAudioTranscription';
+
 const editorStyles = {
   '.ProseMirror': {
     '& p': {
@@ -106,11 +109,8 @@ const TextEditor = forwardRef(({
   autoSaveInterval = 5000, // 5 segundos
   showLoadButton = true
 }, ref) => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [recognition, setRecognition] = useState(null);
-  const [previewText, setPreviewText] = useState('');
+  // Estados gerais do componente
   const [ultimaPosicaoDolar, setUltimaPosicaoDolar] = useState(-1);
-  const [ultimoResultadoIndex, setUltimoResultadoIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false); // flag para evitar loops
@@ -136,7 +136,7 @@ const TextEditor = forwardRef(({
       localStorage.setItem(autoSaveKey, content);
       lastSavedContentRef.current = content;
       setHasAutoSavedContent(true);
-      console.log('✅ Conteúdo salvo automaticamente no localStorage');
+      // console.log('✅ Conteúdo salvo automaticamente no localStorage');
     } catch (error) {
       console.error('❌ Erro ao salvar no localStorage:', error);
     }
@@ -152,7 +152,7 @@ const TextEditor = forwardRef(({
           editor.commands.setContent(savedContent);
           setAutoSaveMessage('Conteúdo carregado do backup automático!');
           setTimeout(() => setAutoSaveMessage(''), 3000);
-          console.log('✅ Conteúdo carregado do localStorage');
+          // console.log('✅ Conteúdo carregado do localStorage');
         } else {
           setAutoSaveMessage('Editor não está disponível. Tente novamente em alguns segundos.');
           setTimeout(() => setAutoSaveMessage(''), 3000);
@@ -175,7 +175,7 @@ const TextEditor = forwardRef(({
       setHasAutoSavedContent(false);
       setAutoSaveMessage('Backup automático removido.');
       setTimeout(() => setAutoSaveMessage(''), 3000);
-      console.log('✅ Backup automático removido');
+      // console.log('✅ Backup automático removido');
     } catch (error) {
       console.error('❌ Erro ao remover backup:', error);
     }
@@ -310,147 +310,174 @@ const TextEditor = forwardRef(({
     }
   });
 
+  // ============================================================
+  // ✅ NOVO CÓDIGO: Hook de transcrição de áudio
+  // Substitui todo o código antigo que está comentado abaixo
+  // Estratégia: Reconhecimento contínuo + insere automaticamente após pausa
+  // ============================================================
+  const {
+    isRecording,
+    previewText,
+    toggleRecording
+  } = useAudioTranscription({
+    editor: editor,
+    atalhoTeclado: 'Shift+A',
+    pauseDelay: 2000 // 2 segundos de pausa antes de inserir (ajustável: 1000, 2000, 3000, etc)
+  });
 
-
-
-    // Função para adicionar pontuação
-  const adicionarPontuacao = (texto) => {
-    let textoProcessado = texto.trim();
+  // ============================================================
+  // CÓDIGO ANTIGO COMENTADO (pode ser removido após testes)
+  // ============================================================
+  // ============================================================
+  // FUNÇÃO adicionarPontuacao - MOVIDA PARA useAudioTranscription.js
+  // ============================================================
+  // Função para adicionar pontuação
+  // const adicionarPontuacao = (texto) => {
+  //   let textoProcessado = texto.trim();
     
-          // Substitui palavras por pontuação
-      // textoProcessado = textoProcessado.replace(/\b vírgula\b/gi, ',');
-      // textoProcessado = textoProcessado.replace(/\b virgula\b/gi, ',');
-      //explicação: \b é um ancorador que indica que a palavra deve começar no início da linha ou no final da linha
-      textoProcessado = textoProcessado.replace(/vírgula\b/gi, ',');
-      textoProcessado = textoProcessado.replace(/virgula\b/gi, ',');
-      textoProcessado = textoProcessado.replace(/ponto final\b/gi, '.');
-      textoProcessado = textoProcessado.replace(/ponto e vírgula\b/gi, ';');
-      textoProcessado = textoProcessado.replace(/ponto e virgula\b/gi, ';');
-      textoProcessado = textoProcessado.replace(/hífen\b/gi, '-');
-      textoProcessado = textoProcessado.replace(/hifen\b/gi, '-');
-      textoProcessado = textoProcessado.replace(/nova linha\b/gi, '\n');
-      textoProcessado = textoProcessado.replace(/próxima linha\b/gi, '\n');
-      textoProcessado = textoProcessado.replace(/parágrafo\b/gi, '\n');
+  //         // Substitui palavras por pontuação
+  //     // textoProcessado = textoProcessado.replace(/\b vírgula\b/gi, ',');
+  //     // textoProcessado = textoProcessado.replace(/\b virgula\b/gi, ',');
+  //     //explicação: \b é um ancorador que indica que a palavra deve começar no início da linha ou no final da linha
+  //     textoProcessado = textoProcessado.replace(/vírgula\b/gi, ',');
+  //     textoProcessado = textoProcessado.replace(/virgula\b/gi, ',');
+  //     textoProcessado = textoProcessado.replace(/ponto final\b/gi, '.');
+  //     textoProcessado = textoProcessado.replace(/ponto e vírgula\b/gi, ';');
+  //     textoProcessado = textoProcessado.replace(/ponto e virgula\b/gi, ';');
+  //     textoProcessado = textoProcessado.replace(/hífen\b/gi, '-');
+  //     textoProcessado = textoProcessado.replace(/hifen\b/gi, '-');
+  //     textoProcessado = textoProcessado.replace(/nova linha\b/gi, '\n');
+  //     textoProcessado = textoProcessado.replace(/próxima linha\b/gi, '\n');
+  //     textoProcessado = textoProcessado.replace(/parágrafo\b/gi, '\n');
       
-      // Capitaliza primeira letra após ponto final
-      textoProcessado = textoProcessado.replace(/\.\s+([a-z])/g, (match, letter) => {
-        return '. ' + letter.toUpperCase();
-      });
+  //     // Capitaliza primeira letra após ponto final
+  //     textoProcessado = textoProcessado.replace(/\.\s+([a-z])/g, (match, letter) => {
+  //       return '. ' + letter.toUpperCase();
+  //     });
       
-      // Capitaliza primeira letra após hífen
-      textoProcessado = textoProcessado.replace(/-\s+([a-z])/g, (match, letter) => {
-        return '- ' + letter.toUpperCase();
-      });
+  //     // Capitaliza primeira letra após hífen
+  //     textoProcessado = textoProcessado.replace(/-\s+([a-z])/g, (match, letter) => {
+  //       return '- ' + letter.toUpperCase();
+  //     });
       
-      return textoProcessado + ' ';
-  };
+  //     return textoProcessado + ' ';
+  // };
 
+  // ============================================================
+  // RECONHECIMENTO DE VOZ - MOVIDO PARA useAudioTranscription.js
+  // ============================================================
   // Implementação básica do reconhecimento de voz
-  useEffect(() => {
-    if ('webkitSpeechRecognition' in window) {
-      const recognition = new window.webkitSpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'pt-BR';
+  // useEffect(() => {
+  //   if ('webkitSpeechRecognition' in window) {
+  //     const recognition = new window.webkitSpeechRecognition();
+  //     recognition.continuous = false;
+  //     recognition.interimResults = true;
+  //     recognition.lang = 'pt-BR';
 
-      recognition.onresult = (event) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
+  //     recognition.onresult = (event) => {
+  //       let finalTranscript = '';
+  //       let interimTranscript = '';
 
-        // Processa apenas os resultados novos (não processados anteriormente)
-        for (let i = ultimoResultadoIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const transcript = result[0].transcript;
+  //       // Processa apenas os resultados novos (não processados anteriormente)
+  //       for (let i = ultimoResultadoIndex; i < event.results.length; i++) {
+  //         const result = event.results[i];
+  //         const transcript = result[0].transcript;
 
-          if (result.isFinal) {
-            finalTranscript += transcript + ' ';
-          } else {
-            interimTranscript += transcript;
-          }
-        }
+  //         if (result.isFinal) {
+  //           finalTranscript += transcript + ' ';
+  //         } else {
+  //           interimTranscript += transcript;
+  //         }
+  //       }
 
-        // Atualiza o índice do último resultado processado
-        setUltimoResultadoIndex(event.results.length);
+  //       // Atualiza o índice do último resultado processado
+  //       setUltimoResultadoIndex(event.results.length);
 
-        // Atualiza o preview com o texto atual
-        const textoAtual = finalTranscript + interimTranscript;
-        setPreviewText(textoAtual);
+  //       // Atualiza o preview com o texto atual
+  //       const textoAtual = finalTranscript + interimTranscript;
+  //       setPreviewText(textoAtual);
 
-        // Se há resultado final, insere no editor
-        if (finalTranscript.trim() && editor) {
-          const { from } = editor.state.selection;
-          const textoProcessado = adicionarPontuacao(finalTranscript.trim());
+  //       // Se há resultado final, insere no editor
+  //       if (finalTranscript.trim() && editor) {
+  //         const { from } = editor.state.selection;
+  //         const textoProcessado = adicionarPontuacao(finalTranscript.trim());
           
-          editor.chain()
-            .focus()
-            .insertContentAt(from, textoProcessado)
-            .run();
+  //         editor.chain()
+  //           .focus()
+  //           .insertContentAt(from, textoProcessado)
+  //           .run();
           
-          // Limpa o preview e reinicia o reconhecimento
-          setPreviewText('');
-          setUltimoResultadoIndex(0);
+  //         // Limpa o preview e reinicia o reconhecimento
+  //         setPreviewText('');
+  //         setUltimoResultadoIndex(0);
 
-          // Reinicia o reconhecimento para evitar duplicação
-          setTimeout(() => {
-            recognition.start();
-          }, 200);         
+  //         // Reinicia o reconhecimento para evitar duplicação
+  //         setTimeout(() => {
+  //           recognition.start();
+  //         }, 200);         
 
-        }
+  //       }
         
         
-      };
+  //     };
 
-      recognition.onerror = (event) => {
-        console.error('Erro no reconhecimento de voz:', event.error);
-        setIsRecording(false);
-      };
+  //     recognition.onerror = (event) => {
+  //       console.error('Erro no reconhecimento de voz:', event.error);
+  //       setIsRecording(false);
+  //     };
 
-      recognition.onend = () => {
-        // Não reinicia automaticamente, pois estamos controlando manualmente
-        console.log('Reconhecimento terminou');
-      };
+  //     recognition.onend = () => {
+  //       // Não reinicia automaticamente, pois estamos controlando manualmente
+  //       // console.log('Reconhecimento terminou');
+  //     };
 
-      setRecognition(recognition);
-    }
-  }, [editor]);
+  //     setRecognition(recognition);
+  //   }
+  // }, [editor]);
 
-  const toggleRecording = () => {
-    if (!recognition) {
-      alert('Seu navegador não suporta reconhecimento de voz.');
-      return;
-    }
+  // ============================================================
+  // FUNÇÃO toggleRecording - MOVIDA PARA useAudioTranscription.js
+  // ============================================================
+  // const toggleRecording = () => {
+  //   if (!recognition) {
+  //     alert('Seu navegador não suporta reconhecimento de voz.');
+  //     return;
+  //   }
 
-    if (isRecording) {
-      recognition.stop();
-      setIsRecording(false);
-      setPreviewText('');
-    } else {
-      try {
-        editor?.commands.focus();
-        recognition.start();
-        setIsRecording(true);
-        setPreviewText('');
-        setUltimoResultadoIndex(0);
-      } catch (error) {
-        if (error.name === 'NotAllowedError') {
-          alert('Por favor, permita o acesso ao microfone para usar esta função.');
-        } else {
-          console.error('Erro ao iniciar gravação:', error);
-          alert('Erro ao iniciar a gravação. Por favor, tente novamente.');
-        }
-        setIsRecording(false);
-      }
-    }
-  };
+  //   if (isRecording) {
+  //     recognition.stop();
+  //     setIsRecording(false);
+  //     setPreviewText('');
+  //   } else {
+  //     try {
+  //       editor?.commands.focus();
+  //       recognition.start();
+  //       setIsRecording(true);
+  //       setPreviewText('');
+  //       setUltimoResultadoIndex(0);
+  //     } catch (error) {
+  //       if (error.name === 'NotAllowedError') {
+  //         alert('Por favor, permita o acesso ao microfone para usar esta função.');
+  //       } else {
+  //         console.error('Erro ao iniciar gravação:', error);
+  //         alert('Erro ao iniciar a gravação. Por favor, tente novamente.');
+  //       }
+  //       setIsRecording(false);
+  //     }
+  //   }
+  // };
 
-  // Adiciona o event listener para o atalho de teclado
+  // ============================================================
+  // ATALHOS DE TECLADO
+  // Nota: Shift+A para gravação agora é gerenciado pelo hook useAudioTranscription
+  // ============================================================
   useEffect(() => {
     const handleKeyDown = (event) => {
-      // Alt + R para gravação
-      if (event.altKey && event.key === 'r') {
-        event.preventDefault();
-        toggleRecording();
-      }
+      // Shift + A para gravação
+      // if (event.shiftKey && event.key === 'a') {
+      //   event.preventDefault();
+      //   toggleRecording();
+      // }
 
       // Alt + F para buscar #
       if (event.altKey && event.key === 'f') {
@@ -564,7 +591,7 @@ const TextEditor = forwardRef(({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isRecording, editor, ultimaPosicaoDolar, processVolumeCalculation]); // Adiciona processVolumeCalculation como dependência
+  }, [editor, ultimaPosicaoDolar, processVolumeCalculation]); // Removido isRecording - agora gerenciado pelo hook
 
   // Expõe o editor através da ref
   useImperativeHandle(ref, () => ({
@@ -771,7 +798,7 @@ const TextEditor = forwardRef(({
           
           // Copia o texto tabulado (mais compatível com aplicativos desktop)
           navigator.clipboard.writeText(tabulatedText).then(() => {
-            console.log('Tabela copiada em formato tabulado');
+            // console.log('Tabela copiada em formato tabulado');
           }).catch(err => {
             console.error('Erro ao copiar tabela:', err);
             // Fallback para navegadores antigos
@@ -848,7 +875,7 @@ const TextEditor = forwardRef(({
       // Se encontrou uma tabela, deleta ela
       if (tableStart < tableEnd) {
         editor.commands.deleteRange({ from: tableStart, to: tableEnd });
-        console.log('Tabela deletada');
+        // console.log('Tabela deletada');
       }
     }
   };
@@ -880,7 +907,7 @@ const TextEditor = forwardRef(({
           editor.commands.insertContent('\n');
         }
         
-        console.log('Saiu da tabela');
+        // console.log('Saiu da tabela');
       }
     }
   };
@@ -900,9 +927,11 @@ const TextEditor = forwardRef(({
             backgroundColor: '#f8f9fa',
             borderRadius: '8px',
             zIndex: 1000,
-            maxWidth: '80%',
-            minWidth: '400px',
-            maxHeight: '60vh',
+            maxWidth: '90%', // ✅ Aumentado de 80% para 90%
+            minWidth: '300px', // ✅ Reduzido de 400px para 300px
+            width: 'auto', // ✅ Largura automática (cresce com o conteúdo)
+            maxHeight: '80vh',
+            minHeight: 'auto',
             overflowY: 'auto',
             border: '2px solid #dee2e6',
             boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
@@ -915,7 +944,8 @@ const TextEditor = forwardRef(({
               fontStyle: 'italic',
               lineHeight: 1.5,
               padding: '8px',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
             }}
           >
             {previewText}
@@ -996,8 +1026,9 @@ const TextEditor = forwardRef(({
             </RichTextEditor.ControlsGroup>
 
             <RichTextEditor.ControlsGroup>
+              {/* ✅ Botão de gravação usando o hook useAudioTranscription */}
               <Tooltip 
-                label={`${isRecording ? "Parar" : "Iniciar"} Gravação (Alt+R)`}
+                label={`${isRecording ? "Parar" : "Iniciar"} Gravação (Shift+A)`}
                 position="bottom"
                 withArrow
               >

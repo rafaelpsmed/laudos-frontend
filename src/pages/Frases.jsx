@@ -1,10 +1,11 @@
-import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs } from '@mantine/core';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile } from '@tabler/icons-react';
+import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper } from '@mantine/core';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { jwtDecode } from "jwt-decode";
 import { ACCESS_TOKEN } from '../constants';
 import api from '../api';
+import { useAudioTranscription } from '../utils/useAudioTranscription';
 
 // Componentes reutilizáveis
 import MetodosSelect from '../components/MetodosSelect';
@@ -58,6 +59,31 @@ function Frases() {
   const comboboxTituloFrase = useCombobox();
   const comboboxCategoriaSemModelo = useCombobox();
   const comboboxTituloFraseSemModelo = useCombobox();
+
+  // ✅ Hooks de transcrição de áudio para os campos "Frase Base"
+  // Hook para "Frases com Modelo"
+  const {
+    isRecording: isRecordingComModelo,
+    previewText: previewTextComModelo,
+    toggleRecording: toggleRecordingComModelo
+  } = useAudioTranscription({
+    textoState: fraseBase,
+    setTextoState: setFraseBase,
+    atalhoTeclado: 'Shift+A',
+    pauseDelay: 2000
+  });
+
+  // Hook para "Frases sem Modelo"
+  const {
+    isRecording: isRecordingSemModelo,
+    previewText: previewTextSemModelo,
+    toggleRecording: toggleRecordingSemModelo
+  } = useAudioTranscription({
+    textoState: fraseBaseSemModelo,
+    setTextoState: setFraseBaseSemModelo,
+    atalhoTeclado: 'Shift+A',
+    pauseDelay: 2000
+  });
 
 
 
@@ -153,7 +179,7 @@ function Frases() {
   //       };
         
   //       const response = await api.get('/api/frases/categorias-sem-metodos/', config);
-  //       console.log('Resposta da API (categorias sem métodos):', response.data);
+  //       // console.log('Resposta da API (categorias sem métodos):', response.data);
         
   //       if (response.data && Array.isArray(response.data.categorias)) {
   //         setCategoriasFiltradas(response.data.categorias);
@@ -208,7 +234,7 @@ function Frases() {
   };
 
   const handleMetodosModeloChange = async (newValue) => {
-    console.log('handleMetodosModeloChange chamado com newValue:', newValue);
+        // console.log('handleMetodosModeloChange chamado com newValue:', newValue);
     setMetodosModelo(newValue);
     setTitulo('');
     setTexto('');
@@ -216,7 +242,7 @@ function Frases() {
 
     try {
       if (!newValue || newValue.length === 0) {
-        console.log('Nenhum método selecionado');
+        // console.log('Nenhum método selecionado');
         // Limpa as categorias quando não há método selecionado
         setCategoriasFiltradas([]);
         // Comentado - endpoint não implementado
@@ -239,12 +265,12 @@ function Frases() {
           return;
         }
 
-        console.log('Modelo selecionado:', modeloSelecionado);
+        // console.log('Modelo selecionado:', modeloSelecionado);
         // Busca as categorias usando o ID do título do modelo
         const response = await api.get('/api/frases/categorias/', {
           params: { modelo_laudo_id: modeloSelecionado.id }
         });
-        console.log('Resposta categorias do modelo:', response.data);
+        // console.log('Resposta categorias do modelo:', response.data);
         
         if (response.data && Array.isArray(response.data.categorias)) {
           setCategoriasFiltradas([{
@@ -308,7 +334,7 @@ function Frases() {
 
       if (response.data && response.data.frases && response.data.frases.length > 0) {
         const frase = response.data.frases[0];
-        console.log('Frase encontrada:', frase);
+        // console.log('Frase encontrada:', frase);
         
         // Preenche os campos com os dados da frase
         setFraseId(frase.id);
@@ -327,7 +353,7 @@ function Frases() {
           }
         }
       } else {
-        console.log('Frase não encontrada');
+        // console.log('Frase não encontrada');
         // Limpa os campos se a frase não for encontrada
         setFraseBase('');
         setSubstituicaoFraseBase('');
@@ -363,8 +389,8 @@ function Frases() {
 
   const handleTituloSelect = async (selectedTitulo) => {
     try {
-      console.log('Título selecionado:', selectedTitulo);
-      console.log('Títulos disponíveis:', titulosDisponiveis);
+      // console.log('Título selecionado:', selectedTitulo);
+      // console.log('Títulos disponíveis:', titulosDisponiveis);
       
       const modeloSelecionado = titulosDisponiveis.find(item => item.titulo === selectedTitulo);
       if (!modeloSelecionado) {
@@ -372,17 +398,17 @@ function Frases() {
         return;
       }
 
-      console.log('Modelo encontrado:', modeloSelecionado);
+      // console.log('Modelo encontrado:', modeloSelecionado);
       const response = await api.get(`/api/modelo_laudo/${modeloSelecionado.id}/`);
-      console.log('Resposta da API:', response.data);
+      // console.log('Resposta da API:', response.data);
 
       // Atualiza o editor com o texto do modelo
       const textoModelo = response.data.texto || '';
-      console.log('Texto do modelo a ser exibido:', textoModelo);
+      // console.log('Texto do modelo a ser exibido:', textoModelo);
       
       // Garante que o texto é uma string válida
       const textoFormatado = typeof textoModelo === 'string' ? textoModelo : String(textoModelo);
-      console.log('Texto formatado:', textoFormatado);
+      // console.log('Texto formatado:', textoFormatado);
       
       setTexto(textoFormatado);
       setModeloId(modeloSelecionado.id);
@@ -393,7 +419,7 @@ function Frases() {
         f.modelos_laudo && f.modelos_laudo.includes(modeloSelecionado.id)
       );
 
-      console.log('Frases do modelo:', frasesDoModelo);
+      // console.log('Frases do modelo:', frasesDoModelo);
       
       // Organiza as frases por categoria
       const categorias = [...new Set(frasesDoModelo.map(frase => frase.categoriaFrase))];
@@ -675,7 +701,7 @@ function Frases() {
             }
           });
 
-          console.log(`Frase ${frase.id} atualizada com sucesso`);
+          // console.log(`Frase ${frase.id} atualizada com sucesso`);
         }
       }
 
@@ -941,12 +967,12 @@ function Frases() {
 
       if (response.data && response.data.frases && response.data.frases.length > 0) {
         const frase = response.data.frases[0];
-        console.log('Frase encontrada:', frase);
+        // console.log('Frase encontrada:', frase);
         
         setFraseIdSemModelo(frase.id);
         setFraseBaseSemModelo(frase.frase.fraseBase || '');
       } else {
-        console.log('Frase não encontrada');
+        // console.log('Frase não encontrada');
         setFraseBaseSemModelo('');
         setFraseIdSemModelo(null);
       }
@@ -1139,12 +1165,24 @@ function Frases() {
                   </Combobox.Dropdown>
                 </Combobox>
 
-                {/* Input Multilinha Frase Base */}
-                <Input.Wrapper 
-                  label="Frase Base" 
-                  description="Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas." 
-                  required
-                >
+                {/* Input Multilinha Frase Base com Gravação de Áudio */}
+                <Stack gap="xs">
+                  <Group justify="space-between" align="center">
+                    <Input.Label required>Frase Base</Input.Label>
+                    <Button
+                      size="xs"
+                      variant={isRecordingComModelo ? "filled" : "outline"}
+                      color={isRecordingComModelo ? "red" : "blue"}
+                      leftSection={isRecordingComModelo ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
+                      onClick={toggleRecordingComModelo}
+                      title="Atalho: Shift+A | Inserção rápida: Enter"
+                    >
+                      {isRecordingComModelo ? 'Parar (Shift+A)' : 'Gravar (Shift+A)'}
+                    </Button>
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas.
+                  </Text>
                   <Textarea
                     name="fraseBaseComModelo"
                     placeholder="Digite a frase base"                
@@ -1159,7 +1197,15 @@ function Frases() {
                       }
                     }}
                   />
-                </Input.Wrapper>
+                  {/* Preview do texto sendo gravado */}
+                  {previewTextComModelo && (
+                    <Paper p="xs" bg="blue.0" withBorder>
+                      <Text size="xs" c="blue.7" fw={500}>
+                        Gravando: {previewTextComModelo}
+                      </Text>
+                    </Paper>
+                  )}
+                </Stack>
 
                 <Group justify="flex-end" align="center" mt="md">
                   <Tooltip label="Adiciona uma variável que será utilizada nesta frase, mas que pode ser reutilizada em outras frases.">
@@ -1399,12 +1445,24 @@ function Frases() {
                   </Combobox.Dropdown>
                 </Combobox>
 
-                {/* Input Multilinha Frase Base */}
-                <Input.Wrapper 
-                  label="Frase Base" 
-                  description="Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas." 
-                  required
-                >
+                {/* Input Multilinha Frase Base com Gravação de Áudio */}
+                <Stack gap="xs">
+                  <Group justify="space-between" align="center">
+                    <Input.Label required>Frase Base</Input.Label>
+                    <Button
+                      size="xs"
+                      variant={isRecordingSemModelo ? "filled" : "outline"}
+                      color={isRecordingSemModelo ? "red" : "blue"}
+                      leftSection={isRecordingSemModelo ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
+                      onClick={toggleRecordingSemModelo}
+                      title="Atalho: Shift+A | Inserção rápida: Enter"
+                    >
+                      {isRecordingSemModelo ? 'Parar (Shift+A)' : 'Gravar (Shift+A)'}
+                    </Button>
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas.
+                  </Text>
                   <Textarea
                     name="fraseBaseSemModelo"
                     placeholder="Digite a frase base"                
@@ -1419,7 +1477,15 @@ function Frases() {
                       }
                     }}
                   />
-                </Input.Wrapper>
+                  {/* Preview do texto sendo gravado */}
+                  {previewTextSemModelo && (
+                    <Paper p="xs" bg="blue.0" withBorder>
+                      <Text size="xs" c="blue.7" fw={500}>
+                        Gravando: {previewTextSemModelo}
+                      </Text>
+                    </Paper>
+                  )}
+                </Stack>
 
                 <Group justify="flex-end" align="center" mt="md">
                   <Button 

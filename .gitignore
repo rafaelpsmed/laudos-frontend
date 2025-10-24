@@ -24,7 +24,6 @@ dist-ssr
 *.sw?
 
 # Environment variables
-.env
 .env.local
 .env.development.local
 .env.test.local
@@ -107,4 +106,5 @@ temp/
 
 # Arquivos de instruções sensíveis (não versionar)
 INSTRUCOES_GITHUB.md
+CONFIGURACAO_PYTHONANYWHERE.md
 *.txt

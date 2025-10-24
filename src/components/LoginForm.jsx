@@ -116,9 +116,10 @@ const LoginForm = () => {
                 Entrar
               </Button>
 
-              <Text align="center" size="md" mt="xl">
+              {/* Descomentar para mostrar o link de registro */}
+              {/* <Text align="center" size="md" mt="xl">
                 Não tem uma conta? <Anchor onClick={() => navigate('/register')}>Registre-se</Anchor>
-              </Text>
+              </Text> */}
             </Stack>
           </form>
         </Stack>

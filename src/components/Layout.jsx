@@ -16,17 +16,17 @@ function Layout({ children }) {
   useEffect(() => {
     const fetchUserData = async () => {
       const token = localStorage.getItem(ACCESS_TOKEN);
-      console.log('Token:', token); // Debug
+      // console.log('Token:', token); // Debug
 
       if (token) {
         try {
           const decoded = jwtDecode(token);
-          console.log('Token decodificado:', decoded); // Debug
+          // console.log('Token decodificado:', decoded); // Debug
 
           // Verifica se o token contém o user_id
           if (decoded.user_id) {
             const response = await api.get(`/api/auth/me/`);
-            console.log('Resposta da API:', response.data); // Debug
+            // console.log('Resposta da API:', response.data); // Debug
             setUsername(response.data.email);
           } else {
             console.error('Token não contém user_id');
