@@ -1,4 +1,4 @@
-import { Container, Title, Text, Paper, Group, Button, Textarea, Stack, Divider, Alert, NavLink, Checkbox, TextInput, Grid } from '@mantine/core';
+import { Container, Title, Text, Paper, Group, Button, Textarea, Stack, Divider, Alert, NavLink, Checkbox, TextInput, Grid, ActionIcon } from '@mantine/core';
 import { IconBrain, IconSparkles, IconRobot, IconWand, IconAlertCircle, IconCheck, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff } from '@tabler/icons-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
@@ -980,54 +980,44 @@ function IA() {
                                      Você pode digitar ou usar o botão de áudio para falar as informações.
                                  </Text>
 
-                                                                 <Stack gap="xs">
-                                     <Group justify="space-between" align="center">
-                                         <Text size="sm" fw={500}>Informações do exame</Text>
-                                         <Group gap="xs">
-                                           <Button
-                                               size="xs"
-                                               variant={isRecordingAudio ? "filled" : "outline"}
-                                               color={isRecordingAudio ? "red" : "blue"}
-                                               leftSection={isRecordingAudio ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
-                                               onClick={toggleRecordingAudio}
-                                               title="Atalho: Shift+A | Inserção rápida: Enter"
-                                           >
-                                               {isRecordingAudio ? 'Parar Gravação (Shift+A)' : 'Gravar Áudio (Shift+A)'}
-                                           </Button>
-                                            <Button
-                                                size="xs"
-                                                variant="outline"
-                                                color="gray"
-                                                leftSection={<IconFile size={16} />}
-                                                onClick={() => {
-                                                    setTextoAnalise('');
-                                                    // Preview é gerenciado automaticamente pelo hook
-                                                }}
-                                                disabled={!textoAnalise.trim()}
-                                            >
-                                                Limpar Texto
-                                            </Button>
-                                         </Group>
-                                     </Group>
-                                     
-                                     <Textarea
-                                         placeholder="Exemplo: 'Ultrassonografia de abdome total. Paciente com dor abdominal. Fígado aumentado de tamanho, ecotextura heterogênea. Vesícula biliar com cálculo de 1,2cm. Rins normais.'"
-                                         value={textoAnalise}
-                                         onChange={(event) => setTextoAnalise(event.currentTarget.value)}
-                                         minRows={6}
-                                         maxRows={12}
-                                         autosize
-                                     />
-                                     
-                                     {/* Preview do texto sendo gravado */}
-                                     {previewTextAudio && (
-                                         <Paper p="xs" bg="blue.0" withBorder>
-                                             <Text size="xs" c="blue.7" fw={500}>
-                                                 Gravando: {previewTextAudio}
-                                             </Text>
-                                         </Paper>
-                                     )}
-                                 </Stack>
+                                <Stack gap="xs">
+                                    <Text size="sm" fw={500}>Informações do exame</Text>
+                                    
+                                    <div style={{ position: 'relative' }}>
+                                        <Textarea
+                                            placeholder="Exemplo: 'Ultrassonografia de abdome total. Paciente com dor abdominal. Fígado aumentado de tamanho, ecotextura heterogênea. Vesícula biliar com cálculo de 1,2cm. Rins normais.'"
+                                            value={textoAnalise}
+                                            onChange={(event) => setTextoAnalise(event.currentTarget.value)}
+                                            minRows={6}
+                                            maxRows={12}
+                                            autosize
+                                        />
+                                        <ActionIcon
+                                            size="md"
+                                            variant={isRecordingAudio ? "filled" : "subtle"}
+                                            color={isRecordingAudio ? "red" : "blue"}
+                                            onClick={toggleRecordingAudio}
+                                            title="Atalho: Shift+A | Inserção rápida: Enter"
+                                            style={{
+                                                position: 'absolute',
+                                                top: 8,
+                                                right: 8,
+                                                zIndex: 10
+                                            }}
+                                        >
+                                            {isRecordingAudio ? <IconMicrophoneOff size={18} /> : <IconMicrophone size={18} />}
+                                        </ActionIcon>
+                                    </div>
+                                    
+                                    {/* Preview do texto sendo gravado */}
+                                    {previewTextAudio && (
+                                        <Paper p="xs" bg="blue.0" withBorder>
+                                            <Text size="xs" c="blue.7" fw={500}>
+                                                Gravando: {previewTextAudio}
+                                            </Text>
+                                        </Paper>
+                                    )}
+                                </Stack>
 
                                 {erroAnalise && (
                                     <Alert icon={<IconAlertCircle size={16} />} color="red">

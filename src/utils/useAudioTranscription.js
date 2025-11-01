@@ -17,7 +17,8 @@ export const useAudioTranscription = ({
   editor = null,
   textoState = '',
   setTextoState = null,
-  atalhoTeclado = 'Shift+A',
+  atalhoTeclado = 'Escape',
+  // atalhoTeclado = 'Ctrl+Shift+Q',
   pauseDelay = 2000,
   onTranscriptionComplete = null
 } = {}) => {
@@ -386,17 +387,33 @@ export const useAudioTranscription = ({
       // Parse do atalho de teclado
       const atalhoPartes = atalhoTeclado.split('+').map(k => k.trim().toLowerCase());
       
-      // Verifica se o atalho corresponde
-      let atalhoMatch = true;
-      
-      if (atalhoPartes.includes('shift') && !event.shiftKey) atalhoMatch = false;
-      if (atalhoPartes.includes('ctrl') && !event.ctrlKey) atalhoMatch = false;
-      if (atalhoPartes.includes('alt') && !event.altKey) atalhoMatch = false;
-      
       // Pega a tecla principal (última parte do atalho)
       const teclaPrincipal = atalhoPartes[atalhoPartes.length - 1];
       
-      if (atalhoMatch && (event.key.toLowerCase() === teclaPrincipal || event.code.toLowerCase().includes(teclaPrincipal))) {
+      // Verifica se o atalho corresponde
+      let atalhoMatch = true;
+      
+      // Verifica modificadores - devem estar pressionados se necessários, e soltos se não necessários
+      if (atalhoPartes.includes('shift')) {
+        if (!event.shiftKey) atalhoMatch = false;
+      } else {
+        if (event.shiftKey) atalhoMatch = false;
+      }
+      
+      if (atalhoPartes.includes('ctrl') || atalhoPartes.includes('control')) {
+        if (!event.ctrlKey) atalhoMatch = false;
+      } else {
+        if (event.ctrlKey) atalhoMatch = false;
+      }
+      
+      if (atalhoPartes.includes('alt')) {
+        if (!event.altKey) atalhoMatch = false;
+      } else {
+        if (event.altKey) atalhoMatch = false;
+      }
+      
+      // Verifica a tecla principal
+      if (atalhoMatch && event.key.toLowerCase() === teclaPrincipal) {
         event.preventDefault();
         toggleRecording();
       }

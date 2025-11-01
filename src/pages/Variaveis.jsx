@@ -1,8 +1,8 @@
 import Layout from '../components/Layout';
-import { Divider, Stack, Select, TextInput, Button, Group, Text, Tooltip } from '@mantine/core';
-import { useState } from 'react';
+import { Divider, Stack, Select, TextInput, Button, Group, Text, Tooltip, Modal } from '@mantine/core';
+import { useState, useEffect } from 'react';
 import VariaveisCombobox from '../components/VariaveisCombobox';
-import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp, IconArrowRight, IconGripVertical } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp, IconArrowRight, IconGripVertical, IconVariable } from '@tabler/icons-react';
 import api from '../api';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
@@ -17,6 +17,8 @@ function Variaveis() {
   const [variavelId, setVariavelId] = useState(null);
   const [delimitador, setDelimitador] = useState('');
   const [ultimoDelimitador, setUltimoDelimitador] = useState('');
+  const [modalVariaveisAberto, setModalVariaveisAberto] = useState(false);
+  const [listaVariaveis, setListaVariaveis] = useState([]);
 
   const handleVariavelSelect = (variavel) => {
     if (!variavel) {
@@ -185,6 +187,70 @@ function Variaveis() {
     setUltimoDelimitador('');
   };
 
+  // Buscar lista de variáveis para o modal
+  useEffect(() => {
+    const fetchVariaveis = async () => {
+      try {
+        const response = await api.get('/api/variaveis/');
+        // Filtra a variável atual se estiver editando
+        const variaveisFiltradas = variavelId 
+          ? response.data.filter(v => v.id !== variavelId)
+          : response.data;
+        setListaVariaveis(variaveisFiltradas);
+      } catch (error) {
+        console.error('Erro ao buscar variáveis:', error);
+      }
+    };
+
+    if (modalVariaveisAberto) {
+      fetchVariaveis();
+    }
+  }, [modalVariaveisAberto, variavelId]);
+
+  // Função para adicionar referência de variável ao campo Valor
+  const handleAdicionarVariavel = (variavel) => {
+    const referencia = `{${variavel.tituloVariavel}}`;
+    
+    // Se o campo valor já tem conteúdo, adiciona um espaço antes
+    const novoValor = valor.trim() 
+      ? `${valor} ${referencia}` 
+      : referencia;
+    
+    setValor(novoValor);
+    setModalVariaveisAberto(false);
+  };
+
+  // Função para atualizar o título da variável em todas as frases que a utilizam
+  const atualizarTituloVariavelEmFrases = async (tituloAntigo, tituloNovo) => {
+    try {
+      // Busca todas as frases
+      const response = await api.get('/api/frases/');
+      const frases = response.data;
+
+      // Para cada frase, verifica se contém a variável com o título antigo
+      for (const frase of frases) {
+        if (frase.frase.fraseBase.includes(`{${tituloAntigo}}`)) {
+          // Atualiza a frase base com o novo título
+          const novaFraseBase = frase.frase.fraseBase.replace(
+            `{${tituloAntigo}}`,
+            `{${tituloNovo}}`
+          );
+
+          // Atualiza a frase no servidor
+          await api.put(`/api/frases/${frase.id}/`, {
+            ...frase,
+            frase: {
+              ...frase.frase,
+              fraseBase: novaFraseBase
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar título da variável nas frases:', error);
+    }
+  };
+
   return (
     <Layout>
       <Stack spacing="md">
@@ -244,6 +310,14 @@ function Variaveis() {
                 disabled={!descricao.trim() || !valor.trim()}
               >
                 Adicionar Valores
+              </Button>
+              <Button 
+                variant="outline"
+                color="cyan"
+                onClick={() => setModalVariaveisAberto(true)}
+                leftSection={<IconVariable size={20} />}
+              >
+                Adicionar Variáveis
               </Button>         
             </Group>
 
@@ -409,6 +483,39 @@ function Variaveis() {
             </Group>
           </>
         )}
+
+        {/* Modal para selecionar variáveis */}
+        <Modal
+          opened={modalVariaveisAberto}
+          onClose={() => setModalVariaveisAberto(false)}
+          title="Selecionar Variável"
+          size="md"
+        >
+          <Stack spacing="xs">
+            {listaVariaveis.length > 0 ? (
+              listaVariaveis.map((variavel) => (
+                <Button
+                  key={variavel.id}
+                  variant="subtle"
+                  fullWidth
+                  justify="flex-start"
+                  onClick={() => handleAdicionarVariavel(variavel)}
+                  style={{
+                    textAlign: 'left',
+                    height: 'auto',
+                    padding: '12px',
+                  }}
+                >
+                  <Text size="sm">{variavel.tituloVariavel}</Text>
+                </Button>
+              ))
+            ) : (
+              <Text size="sm" c="dimmed" ta="center" py="md">
+                Nenhuma variável disponível para referenciar
+              </Text>
+            )}
+          </Stack>
+        </Modal>
       </Stack>
     </Layout>
   );

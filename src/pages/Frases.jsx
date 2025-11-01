@@ -1,4 +1,4 @@
-import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper } from '@mantine/core';
+import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper, ActionIcon } from '@mantine/core';
 import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -50,6 +50,11 @@ function Frases() {
   const [categoriaSemModelo, setCategoriaSemModelo] = useState('');
   const [tituloFraseSemModelo, setTituloFraseSemModelo] = useState('');
   const [fraseBaseSemModelo, setFraseBaseSemModelo] = useState('');
+  const [substituicaoFraseBaseSemModelo, setSubstituicaoFraseBaseSemModelo] = useState('');
+  const [procurarPorSemModelo, setProcurarPorSemModelo] = useState('');
+  const [substituirPorSemModelo, setSubstituirPorSemModelo] = useState('');
+  const [substituicoesOutrasSemModelo, setSubstituicoesOutrasSemModelo] = useState([]);
+  const [conclusaoSemModelo, setConclusaoSemModelo] = useState('');
   const [fraseIdSemModelo, setFraseIdSemModelo] = useState(null);
   const [categoriasFiltradasSemModelo, setCategoriasFiltradasSemModelo] = useState([]);
   const [titulosFiltradosSemModelo, setTitulosFiltradosSemModelo] = useState([]);
@@ -796,9 +801,12 @@ function Frases() {
     setCategoriaSemModelo('');
     setTituloFraseSemModelo('');
     setFraseBaseSemModelo('');
+    setSubstituicaoFraseBaseSemModelo('');
+    setProcurarPorSemModelo('');
+    setSubstituirPorSemModelo('');
+    setSubstituicoesOutrasSemModelo([]);
+    setConclusaoSemModelo('');
     setFraseIdSemModelo(null);
-    setCategoriasFiltradasSemModelo([]);
-    setTitulosFiltradosSemModelo([]);
   };
 
   // Função para salvar frase sem modelo
@@ -822,7 +830,10 @@ function Frases() {
         categoriaFrase: categoriaSemModelo.trim(),
         tituloFrase: tituloFraseSemModelo.trim(),
         frase: {
-          fraseBase: fraseBaseSemModelo.trim()
+          fraseBase: fraseBaseSemModelo.trim(),
+          substituicaoFraseBase: substituicaoFraseBaseSemModelo.trim(),
+          substituicoesOutras: substituicoesOutrasSemModelo,
+          conclusao: conclusaoSemModelo.trim()
         }
       };
 
@@ -870,7 +881,10 @@ function Frases() {
         categoriaFrase: categoriaSemModelo.trim(),
         tituloFrase: tituloFraseSemModelo.trim(),
         frase: {
-          fraseBase: fraseBaseSemModelo.trim()
+          fraseBase: fraseBaseSemModelo.trim(),
+          substituicaoFraseBase: substituicaoFraseBaseSemModelo.trim(),
+          substituicoesOutras: substituicoesOutrasSemModelo,
+          conclusao: conclusaoSemModelo.trim()
         }
       };
 
@@ -953,12 +967,43 @@ function Frases() {
     }
   };
 
+  // Funções para gerenciar substituições sem modelo
+  const handleCriarSubstituicaoSemModelo = () => {
+    if (!procurarPorSemModelo.trim()) return;
+
+    const novaSubstituicao = {
+      procurarPor: procurarPorSemModelo,
+      substituirPor: substituirPorSemModelo
+    };
+
+    setSubstituicoesOutrasSemModelo([...substituicoesOutrasSemModelo, novaSubstituicao]);
+    
+    // Limpa os campos após adicionar
+    setProcurarPorSemModelo('');
+    setSubstituirPorSemModelo('');
+  };
+
+  const handleEditarSubstituicaoSemModelo = (index) => {
+    const substituicao = substituicoesOutrasSemModelo[index];
+    setProcurarPorSemModelo(substituicao.procurarPor);
+    setSubstituirPorSemModelo(substituicao.substituirPor);
+    
+    // Remove a substituição atual
+    setSubstituicoesOutrasSemModelo(substituicoesOutrasSemModelo.filter((_, i) => i !== index));
+  };
+
+  const handleDeletarSubstituicaoSemModelo = (index) => {
+    if (window.confirm('Tem certeza que deseja excluir esta substituição?')) {
+      setSubstituicoesOutrasSemModelo(substituicoesOutrasSemModelo.filter((_, i) => i !== index));
+    }
+  };
+
   // Função para manipular seleção de título da frase sem modelo
   const handleTituloFraseSemModeloSelect = async (selectedTitulo) => {
     try {
       setTituloFraseSemModelo(selectedTitulo);
       
-      const response = await api.get('/api/frases/', {
+      const response = await api.get('/api/frases/frases/', {
         params: {
           titulo_frase: selectedTitulo,
           categoria: categoriaSemModelo
@@ -971,14 +1016,23 @@ function Frases() {
         
         setFraseIdSemModelo(frase.id);
         setFraseBaseSemModelo(frase.frase.fraseBase || '');
+        setSubstituicaoFraseBaseSemModelo(frase.frase.substituicaoFraseBase || '');
+        setSubstituicoesOutrasSemModelo(frase.frase.substituicoesOutras || []);
+        setConclusaoSemModelo(frase.frase.conclusao || '');
       } else {
         // console.log('Frase não encontrada');
         setFraseBaseSemModelo('');
+        setSubstituicaoFraseBaseSemModelo('');
+        setSubstituicoesOutrasSemModelo([]);
+        setConclusaoSemModelo('');
         setFraseIdSemModelo(null);
       }
     } catch (error) {
       console.error('Erro ao selecionar título:', error);
       setFraseBaseSemModelo('');
+      setSubstituicaoFraseBaseSemModelo('');
+      setSubstituicoesOutrasSemModelo([]);
+      setConclusaoSemModelo('');
       setFraseIdSemModelo(null);
     }
   };
@@ -1167,36 +1221,41 @@ function Frases() {
 
                 {/* Input Multilinha Frase Base com Gravação de Áudio */}
                 <Stack gap="xs">
-                  <Group justify="space-between" align="center">
-                    <Input.Label required>Frase Base</Input.Label>
-                    <Button
-                      size="xs"
-                      variant={isRecordingComModelo ? "filled" : "outline"}
-                      color={isRecordingComModelo ? "red" : "blue"}
-                      leftSection={isRecordingComModelo ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
-                      onClick={toggleRecordingComModelo}
-                      title="Atalho: Shift+A | Inserção rápida: Enter"
-                    >
-                      {isRecordingComModelo ? 'Parar (Shift+A)' : 'Gravar (Shift+A)'}
-                    </Button>
-                  </Group>
+                  <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
                     Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas.
                   </Text>
-                  <Textarea
-                    name="fraseBaseComModelo"
-                    placeholder="Digite a frase base"                
-                    value={fraseBase}
-                    onChange={(event) => setFraseBase(event.currentTarget.value)}
-                    minRows={3}
-                    autosize
-                    maxRows={10}
-                    styles={{
-                      input: {
-                        whiteSpace: 'pre-wrap'
-                      }
-                    }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <Textarea
+                      name="fraseBaseComModelo"
+                      placeholder="Digite a frase base"                
+                      value={fraseBase}
+                      onChange={(event) => setFraseBase(event.currentTarget.value)}
+                      minRows={3}
+                      autosize
+                      maxRows={10}
+                      styles={{
+                        input: {
+                          whiteSpace: 'pre-wrap'
+                        }
+                      }}
+                    />
+                    <ActionIcon
+                      size="md"
+                      variant={isRecordingComModelo ? "filled" : "subtle"}
+                      color={isRecordingComModelo ? "red" : "blue"}
+                      onClick={toggleRecordingComModelo}
+                      title="Atalho: Shift+A | Inserção rápida: Enter"
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        zIndex: 10
+                      }}
+                    >
+                      {isRecordingComModelo ? <IconMicrophoneOff size={18} /> : <IconMicrophone size={18} />}
+                    </ActionIcon>
+                  </div>
                   {/* Preview do texto sendo gravado */}
                   {previewTextComModelo && (
                     <Paper p="xs" bg="blue.0" withBorder>
@@ -1447,36 +1506,41 @@ function Frases() {
 
                 {/* Input Multilinha Frase Base com Gravação de Áudio */}
                 <Stack gap="xs">
-                  <Group justify="space-between" align="center">
-                    <Input.Label required>Frase Base</Input.Label>
-                    <Button
-                      size="xs"
-                      variant={isRecordingSemModelo ? "filled" : "outline"}
-                      color={isRecordingSemModelo ? "red" : "blue"}
-                      leftSection={isRecordingSemModelo ? <IconMicrophoneOff size={16} /> : <IconMicrophone size={16} />}
-                      onClick={toggleRecordingSemModelo}
-                      title="Atalho: Shift+A | Inserção rápida: Enter"
-                    >
-                      {isRecordingSemModelo ? 'Parar (Shift+A)' : 'Gravar (Shift+A)'}
-                    </Button>
-                  </Group>
+                  <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
                     Digite o texto a ser inserido no laudo. Use Enter para criar novas linhas.
                   </Text>
-                  <Textarea
-                    name="fraseBaseSemModelo"
-                    placeholder="Digite a frase base"                
-                    value={fraseBaseSemModelo}
-                    onChange={(event) => setFraseBaseSemModelo(event.currentTarget.value)}
-                    minRows={3}
-                    autosize
-                    maxRows={10}
-                    styles={{
-                      input: {
-                        whiteSpace: 'pre-wrap'
-                      }
-                    }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <Textarea
+                      name="fraseBaseSemModelo"
+                      placeholder="Digite a frase base"                
+                      value={fraseBaseSemModelo}
+                      onChange={(event) => setFraseBaseSemModelo(event.currentTarget.value)}
+                      minRows={3}
+                      autosize
+                      maxRows={10}
+                      styles={{
+                        input: {
+                          whiteSpace: 'pre-wrap'
+                        }
+                      }}
+                    />
+                    <ActionIcon
+                      size="md"
+                      variant={isRecordingSemModelo ? "filled" : "subtle"}
+                      color={isRecordingSemModelo ? "red" : "blue"}
+                      onClick={toggleRecordingSemModelo}
+                      title="Atalho: Shift+A | Inserção rápida: Enter"
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        zIndex: 10
+                      }}
+                    >
+                      {isRecordingSemModelo ? <IconMicrophoneOff size={18} /> : <IconMicrophone size={18} />}
+                    </ActionIcon>
+                  </div>
                   {/* Preview do texto sendo gravado */}
                   {previewTextSemModelo && (
                     <Paper p="xs" bg="blue.0" withBorder>
@@ -1513,6 +1577,105 @@ function Frases() {
                     </Button>
                   </Tooltip>
                 </Group>
+
+                <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
+                  <Input
+                    placeholder="Digite o texto a ser substituído"                  
+                    value={substituicaoFraseBaseSemModelo}
+                    onChange={(event) => setSubstituicaoFraseBaseSemModelo(event.currentTarget.value)}                  
+                  />
+                </Input.Wrapper>
+
+                <Divider label="Outras substituições a serem feitas no laudo (opcional)" labelPosition="center" my="md" />              
+
+                {/* Input Procurar Por */}
+                <Input.Wrapper label="Procurar Por">
+                  <Input
+                    placeholder="Digite o texto a ser procurado"
+                    value={procurarPorSemModelo}
+                    onChange={(event) => setProcurarPorSemModelo(event.currentTarget.value)}
+                  />
+                </Input.Wrapper>
+
+                {/* Input Substituir Por */}
+                <Input.Wrapper label="Substituir Por">
+                  <Input
+                    placeholder="Digite o texto para substituição"
+                    value={substituirPorSemModelo}
+                    onChange={(event) => setSubstituirPorSemModelo(event.currentTarget.value)}
+                  />
+                </Input.Wrapper>
+
+                {/* Botão adicionar substituição */}
+                <Group justify="flex-end" mt="md">
+                  <Button 
+                    color="blue" 
+                    onClick={handleCriarSubstituicaoSemModelo}
+                    loading={saving}
+                    leftSection={<IconDeviceFloppy size={20} />}
+                    disabled={!procurarPorSemModelo.trim()}
+                  >
+                    Adicionar Substituição
+                  </Button>         
+                </Group>
+
+                {/* Lista de substituições */}
+                {substituicoesOutrasSemModelo.length > 0 && (
+                  <Stack spacing="xs" mt="md">
+                    <Text size="sm" fw={500}>Substituições adicionadas:</Text>
+                    {substituicoesOutrasSemModelo.map((sub, index) => (
+                      <div key={index} style={{ 
+                        padding: '8px', 
+                        backgroundColor: '#f8f9fa', 
+                        borderRadius: '4px',
+                        border: '1px solid #dee2e6'
+                      }}>
+                        <Group justify="space-between" align="flex-start">
+                          <Stack spacing="xs" style={{ flex: 1 }}>
+                            <Text size="sm">
+                              <strong>Procurar por:</strong> {sub.procurarPor}
+                            </Text>
+                            <Text size="sm">
+                              <strong>Substituir por:</strong> {sub.substituirPor}
+                            </Text>
+                          </Stack>
+                          <Group gap="xs">
+                            <Button
+                              variant="subtle"
+                              color="blue"
+                              size="xs"
+                              onClick={() => handleEditarSubstituicaoSemModelo(index)}
+                              leftSection={<IconEdit size={14} />}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              variant="subtle"
+                              color="red"
+                              size="xs"
+                              onClick={() => handleDeletarSubstituicaoSemModelo(index)}
+                              leftSection={<IconTrash size={14} />}
+                            >
+                              Excluir
+                            </Button>
+                          </Group>
+                        </Group>
+                      </div>
+                    ))}
+                  </Stack>
+                )}
+
+                <Divider label="Conclusão (opcional)" labelPosition="center" my="md" />
+
+                {/* Input Conclusão */}
+                <Textarea
+                  label="Conclusão"
+                  placeholder="Digite a conclusão"
+                  value={conclusaoSemModelo}
+                  onChange={(event) => setConclusaoSemModelo(event.currentTarget.value)}
+                  minRows={2}
+                  autosize
+                />
 
                 {/* Botões */}
                 <Group justify="flex-end" mt="md">

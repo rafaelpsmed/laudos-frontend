@@ -321,7 +321,10 @@ const TextEditor = forwardRef(({
     toggleRecording
   } = useAudioTranscription({
     editor: editor,
-    atalhoTeclado: 'Shift+A',
+    // atalhoTeclado: 'Ctrl+Shift+Q',
+    atalhoTeclado: 'Escape',
+    
+
     pauseDelay: 2000 // 2 segundos de pausa antes de inserir (ajustável: 1000, 2000, 3000, etc)
   });
 

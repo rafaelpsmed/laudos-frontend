@@ -10,6 +10,12 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   const [opcoesRadio, setOpcoesRadio] = useState({});
   const [variaveisPorInstancia, setVariaveisPorInstancia] = useState({}); // Estado para controlar cada instância separadamente
   const [contagemVariaveis, setContagemVariaveis] = useState({}); // Para contar ocorrências de cada variável
+  const [todasVariaveisCache, setTodasVariaveisCache] = useState([]); // Cache de todas as variáveis para referências
+  const [modalReferenciaAberto, setModalReferenciaAberto] = useState(false);
+  const [variavelReferenciadaAtual, setVariavelReferenciadaAtual] = useState(null);
+  const [variavelIdOrigem, setVariavelIdOrigem] = useState(null);
+  const [valorOrigem, setValorOrigem] = useState(null);
+  const [valorReferenciaSelecionado, setValorReferenciaSelecionado] = useState(null);
 
   // Função para salvar as escolhas no localStorage
   const salvarEscolhas = (valores) => {
@@ -35,6 +41,10 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     // console.log('temMedida:', temMedida);
     const buscarDetalhesVariaveis = async () => {
       try {
+        // Busca todas as variáveis para cache (usado na expansão de referências)
+        const todasVariaveisResponse = await api.get('/api/variaveis/');
+        setTodasVariaveisCache(todasVariaveisResponse.data);
+
         const detalhes = await Promise.all(
           variaveis.map(async (variavel) => {
             const response = await api.get(`/api/variaveis/${variavel.id}/`);
@@ -124,19 +134,95 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   }, [opened, gruposOpcoes]);
 
   const handleChange = (variavelId, valor) => {
-    const novosValores = {
-      ...valoresSelecionados,
-      [variavelId]: valor
-    };
-    setValoresSelecionados(novosValores);
-    // Salva as escolhas no localStorage
-    salvarEscolhas(novosValores);
+    // Verifica se o valor selecionado contém referências
+    const referencias = detectarReferencias(valor);
+    
+    if (referencias.length > 0) {
+      // Se tem referência, busca a variável referenciada e abre modal secundário
+      const primeiraReferencia = referencias[0];
+      const variavelRef = encontrarVariavelReferenciada(primeiraReferencia);
+      
+      if (variavelRef) {
+        // Salva temporariamente a seleção
+        setValorOrigem(valor);
+        setVariavelIdOrigem(variavelId);
+        setVariavelReferenciadaAtual(variavelRef);
+        setValorReferenciaSelecionado(null);
+        setModalReferenciaAberto(true);
+      } else {
+        // Variável referenciada não encontrada, salva normalmente
+        const novosValores = {
+          ...valoresSelecionados,
+          [variavelId]: valor
+        };
+        setValoresSelecionados(novosValores);
+        salvarEscolhas(novosValores);
+      }
+    } else {
+      // Não tem referência, salva normalmente
+      const novosValores = {
+        ...valoresSelecionados,
+        [variavelId]: valor
+      };
+      setValoresSelecionados(novosValores);
+      salvarEscolhas(novosValores);
+    }
+  };
+
+  // Função para detectar referências no formato {NomeVariável}
+  const detectarReferencias = (texto) => {
+    const regex = /\{([^}]+)\}/g;
+    const referencias = [];
+    let match;
+    while ((match = regex.exec(texto)) !== null) {
+      referencias.push(match[1]); // Nome da variável sem as chaves
+    }
+    return referencias;
+  };
+
+  // Função para encontrar variável referenciada no cache
+  const encontrarVariavelReferenciada = (nomeVariavel) => {
+    return todasVariaveisCache.find(v => v.tituloVariavel === nomeVariavel);
+  };
+
+  // Função para resolver referências em um valor (substitui {NomeVariável} pelo valor selecionado)
+  const resolverReferencias = (valor, variavelRef, valorRefSelecionado) => {
+    if (!variavelRef || !valorRefSelecionado) return valor;
+    
+    const nomeEscapado = variavelRef.tituloVariavel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\{${nomeEscapado}\\}`, 'g');
+    
+    // Se é array (checkbox ou múltiplas opções), processa cada valor
+    if (Array.isArray(valorRefSelecionado)) {
+      const valoresFinais = valorRefSelecionado.map(valRef => {
+        const valorEncontrado = variavelRef.variavel.valores.find(v => v.valor === valRef);
+        return valorEncontrado ? valorEncontrado.valor : valRef;
+      });
+      
+      // Usa delimitadores se disponíveis
+      if (variavelRef.variavel.delimitador && variavelRef.variavel.ultimoDelimitador && valoresFinais.length > 1) {
+        const ultimoValor = valoresFinais.pop();
+        const valorFormatado = valoresFinais.join(variavelRef.variavel.delimitador) + 
+                               variavelRef.variavel.ultimoDelimitador + ultimoValor;
+        return valor.replace(regex, valorFormatado);
+      } else {
+        const valorFormatado = valoresFinais.join(variavelRef.variavel.delimitador || ', ');
+        return valor.replace(regex, valorFormatado);
+      }
+    } else {
+      // Valor único
+      const valorEncontrado = variavelRef.variavel.valores.find(v => v.valor === valorRefSelecionado);
+      const valorFinal = valorEncontrado ? valorEncontrado.valor : valorRefSelecionado;
+      
+      return valor.replace(regex, valorFinal);
+    }
   };
 
   // Função auxiliar para renderizar controles de variável por instância
   const renderControleInstancia = (variavel, instanciaId, tituloBase) => {
     const tipo = variavel.variavel.tipo;
 
+    // Renderiza valores originais (sem expansão)
     const valores = variavel.variavel.valores.map(v => ({
       value: v.valor,
       label: v.descricao
@@ -239,8 +325,9 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
           if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
             const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
             const valoresTexto = valores.map(val => {
+              // Busca no valor original, mas se não encontrar, pode ser valor expandido - usa diretamente
               const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
-              return valorEncontrado ? valorEncontrado.valor : val;
+              return valorEncontrado ? valorEncontrado.valor : val; // Se for expandido, já está resolvido
             });
 
             if (valoresTexto.length > 0) {
@@ -257,7 +344,10 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
               resultado[instanciaId] = '';
             }
           } else {
+            // Para valores expandidos, usa diretamente o valor selecionado
+            // (já está resolvido, sem referências)
             const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
+            // Se não encontrar nos valores originais, pode ser um valor expandido - usa diretamente
             resultado[instanciaId] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
           }
         }
@@ -268,8 +358,9 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
         if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
           const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
           const valoresTexto = valores.map(val => {
+            // Busca no valor original, mas se não encontrar, pode ser valor expandido - usa diretamente
             const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
-            return valorEncontrado ? valorEncontrado.valor : val;
+            return valorEncontrado ? valorEncontrado.valor : val; // Se for expandido, já está resolvido
           });
 
           if (valoresTexto.length > 0) {
@@ -286,7 +377,10 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
             resultado[variavel.tituloVariavel] = '';
           }
         } else {
+          // Para valores expandidos, usa diretamente o valor selecionado
+          // (já está resolvido, sem referências)
           const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
+          // Se não encontrar nos valores originais, pode ser um valor expandido - usa diretamente
           resultado[variavel.tituloVariavel] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
         }
       }
@@ -308,9 +402,225 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     onClose();
   };
 
+  // Função para atualizar valor quando usuário seleciona (sem aplicar ainda)
+  const handleSelecaoReferencia = (valor) => {
+    setValorReferenciaSelecionado(valor);
+  };
+
+  // Função chamada quando usuário confirma no modal secundário - aplica tudo e insere no editor
+  const handleConfirmarReferenciaEFechar = () => {
+    if (!variavelReferenciadaAtual || !valorOrigem || !variavelIdOrigem) {
+      return;
+    }
+    
+    // Validação: não pode ser null ou string vazia
+    if (valorReferenciaSelecionado === null || valorReferenciaSelecionado === '') {
+      return;
+    }
+    
+    // Se for array vazio, não resolve referência (mantém o valor original com {NomeVariável})
+    let valorResolvido;
+    if (Array.isArray(valorReferenciaSelecionado) && valorReferenciaSelecionado.length === 0) {
+      // Array vazio - não substitui a referência, mantém o valor original
+      valorResolvido = valorOrigem;
+    } else {
+      // Resolve a referência substituindo {NomeVariável} pelo valor selecionado
+      valorResolvido = resolverReferencias(valorOrigem, variavelReferenciadaAtual, valorReferenciaSelecionado);
+    }
+
+    // Atualiza o valor resolvido
+    const novosValores = {
+      ...valoresSelecionados,
+      [variavelIdOrigem]: valorResolvido
+    };
+    setValoresSelecionados(novosValores);
+    salvarEscolhas(novosValores);
+    
+    // Fecha o modal de referência
+    setModalReferenciaAberto(false);
+    setVariavelReferenciadaAtual(null);
+    setVariavelIdOrigem(null);
+    setValorOrigem(null);
+    setValorReferenciaSelecionado(null);
+    
+    // Processa o resultado com os NOVOS valores atualizados
+    const resultado = {};
+    
+    // Conta quantas vezes cada variável aparece
+    const contagemVariaveis = {};
+    elementosOrdenados.forEach(elemento => {
+      if (elemento.tipo === 'variavel') {
+        const titulo = elemento.dados.tituloVariavel;
+        contagemVariaveis[titulo] = (contagemVariaveis[titulo] || 0) + 1;
+      }
+    });
+    
+    // Processa cada variável considerando se ela aparece múltiplas vezes
+    variaveisDetalhes.forEach(variavel => {
+      const titulo = variavel.tituloVariavel;
+      const aparicoes = contagemVariaveis[titulo] || 1;
+      
+      if (aparicoes > 1) {
+        // Se aparece múltiplas vezes, processa cada instância separadamente
+        for (let i = 0; i < aparicoes; i++) {
+          const instanciaId = `${titulo}_${i}`;
+          const valorSelecionado = novosValores[instanciaId];
+          
+          if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
+            const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
+            const valoresTexto = valores.map(val => {
+              const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
+              return valorEncontrado ? valorEncontrado.valor : val;
+            });
+            
+            if (valoresTexto.length > 0) {
+              const delimitador = variavel.variavel.delimitador || ', ';
+              const ultimoDelimitador = variavel.variavel.ultimoDelimitador || ' e ';
+              
+              if (valoresTexto.length === 1) {
+                resultado[instanciaId] = valoresTexto[0];
+              } else {
+                const ultimoValor = valoresTexto.pop();
+                resultado[instanciaId] = valoresTexto.join(delimitador) + ultimoDelimitador + ultimoValor;
+              }
+            } else {
+              resultado[instanciaId] = '';
+            }
+          } else {
+            const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
+            resultado[instanciaId] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
+          }
+        }
+      } else {
+        // Se aparece apenas uma vez, usa o comportamento normal
+        const valorSelecionado = novosValores[variavel.id];
+        
+        if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
+          const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
+          const valoresTexto = valores.map(val => {
+            const valorEncontrado = variavel.variavel.valores.find(v => v.valor === val);
+            return valorEncontrado ? valorEncontrado.valor : val;
+          });
+          
+          if (valoresTexto.length > 0) {
+            const delimitador = variavel.variavel.delimitador || ', ';
+            const ultimoDelimitador = variavel.variavel.ultimoDelimitador || ' e ';
+            
+            if (valoresTexto.length === 1) {
+              resultado[variavel.tituloVariavel] = valoresTexto[0];
+            } else {
+              const ultimoValor = valoresTexto.pop();
+              resultado[variavel.tituloVariavel] = valoresTexto.join(delimitador) + ultimoDelimitador + ultimoValor;
+            }
+          } else {
+            resultado[variavel.tituloVariavel] = '';
+          }
+        } else {
+          const valorEncontrado = variavel.variavel.valores.find(v => v.valor === valorSelecionado);
+          resultado[variavel.tituloVariavel] = valorEncontrado ? valorEncontrado.valor : valorSelecionado;
+        }
+      }
+    });
+    
+    // Adiciona a medida ao resultado se existir
+    if (temMedida && medida.trim()) {
+      resultado['$'] = medida.trim();
+    }
+    
+    // Adiciona as opções selecionadas dos grupos de radio
+    if (gruposOpcoes) {
+      gruposOpcoes.forEach((grupo, index) => {
+        resultado[grupo.textoOriginal] = opcoesRadio[`grupo_${index}`] || grupo.opcoes[0];
+      });
+    }
+    
+    // Fecha modal principal e envia resultado
+    onConfirm(resultado);
+    onClose();
+  };
+
+  // Função para renderizar controle da variável referenciada no modal secundário
+  const renderControleReferencia = (variavel) => {
+    const tipo = variavel.variavel.tipo;
+    
+    const valores = variavel.variavel.valores.map(v => ({
+      value: v.valor,
+      label: v.descricao
+    }));
+
+    if (tipo === "Combobox") {
+      return (
+        <ComboboxAutocomplete
+          label={variavel.tituloVariavel}
+          placeholder="Selecione um valor"
+          data={valores}
+          value={valorReferenciaSelecionado || ''}
+          onChange={handleSelecaoReferencia}
+        />
+      );
+    } else if (tipo === "Grupo de Radio") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Radio.Group
+            value={valorReferenciaSelecionado || ''}
+            onChange={handleSelecaoReferencia}
+          >
+            <Stack mt="xs">
+              {valores.map((valor) => (
+                <Radio
+                  key={valor.value}
+                  value={valor.value}
+                  label={valor.label}
+                />
+              ))}
+            </Stack>
+          </Radio.Group>
+        </Stack>
+      );
+    } else if (tipo === "Grupo de Checkbox") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Checkbox.Group
+            value={Array.isArray(valorReferenciaSelecionado) ? valorReferenciaSelecionado : []}
+            onChange={handleSelecaoReferencia}
+          >
+            <Stack mt="xs">
+              {valores.map((valor) => (
+                <Checkbox
+                  key={valor.value}
+                  value={valor.value}
+                  label={valor.label}
+                />
+              ))}
+            </Stack>
+          </Checkbox.Group>
+        </Stack>
+      );
+    } else if (tipo === "Combobox com múltiplas opções") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <MultiSelect
+            label=""
+            placeholder="Selecione os valores"
+            data={valores}
+            value={Array.isArray(valorReferenciaSelecionado) ? valorReferenciaSelecionado : []}
+            onChange={handleSelecaoReferencia}
+            searchable
+            required={false}
+            clearable
+          />
+        </Stack>
+      );
+    }
+  };
+
   const renderControle = (variavel) => {
     const tipo = variavel.variavel.tipo;
     
+    // Renderiza valores originais (sem expansão)
     const valores = variavel.variavel.valores.map(v => ({
       value: v.valor,
       label: v.descricao
@@ -478,6 +788,53 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
           <Button onClick={handleConfirm}>Confirmar</Button>
         </Group>
       </Stack>
+
+      {/* Modal secundário para variáveis referenciadas */}
+      <Modal
+        opened={modalReferenciaAberto}
+        onClose={() => {
+          setModalReferenciaAberto(false);
+          setVariavelReferenciadaAtual(null);
+          setVariavelIdOrigem(null);
+          setValorOrigem(null);
+          setValorReferenciaSelecionado(null);
+        }}
+        title={variavelReferenciadaAtual ? `Selecionar ${variavelReferenciadaAtual.tituloVariavel}` : 'Selecionar Variável Referenciada'}
+        size="md"
+      >
+        {variavelReferenciadaAtual && (
+          <Stack>
+            <Text size="sm" c="dimmed" mb="md">
+              Selecione um valor para a variável referenciada
+            </Text>
+            {renderControleReferencia(variavelReferenciadaAtual)}
+            <Group position="right" mt="md">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setModalReferenciaAberto(false);
+                  setVariavelReferenciadaAtual(null);
+                  setVariavelIdOrigem(null);
+                  setValorOrigem(null);
+                  setValorReferenciaSelecionado(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                onClick={handleConfirmarReferenciaEFechar}
+                disabled={
+                  valorReferenciaSelecionado === null || 
+                  valorReferenciaSelecionado === '' ||
+                  (Array.isArray(valorReferenciaSelecionado) && valorReferenciaSelecionado.length === 0)
+                }
+              >
+                Confirmar
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Modal>
   );
 }
