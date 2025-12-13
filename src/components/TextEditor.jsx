@@ -2,8 +2,11 @@ import { RichTextEditor, Link } from '@mantine/tiptap';
 import debounce from 'lodash/debounce';
 import { useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import {Extension, InputRule} from '@tiptap/core';
+import { Plugin, PluginKey } from 'prosemirror-state';
 import TextAlign from '@tiptap/extension-text-align';
 import TextStyle from '@tiptap/extension-text-style';
+import BulletList from '@tiptap/extension-bullet-list';
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import FontFamily from '@tiptap/extension-font-family';
@@ -40,6 +43,27 @@ const editorStyles = {
   },
   '.ProseMirror p span[style*="font-size"]': {
     fontSize: 'inherit !important',
+  },
+  // ADICIONE ESTE BLOCO AQUI PARA MUDAR O BULLET PARA HÍFEN
+  '.ProseMirror .custom-bullet-list': {
+    listStyleType: 'none !important', // Remove o ponto preto padrão
+    // listStyleType: '-', // Remove o ponto preto padrão
+    paddingLeft: '1.5em',
+  },
+  '.ProseMirror .custom-bullet-list li': {
+    position: 'relative',
+  },
+  '.ProseMirror .custom-bullet-list li::before': {
+    content: '"-"',      // Define o hífen como marcador
+    position: 'absolute',
+    left: '-1em',        // Posiciona o hífen à esquerda
+    // fontWeight: 'bold',  // Opcional: deixa o hífen mais visível
+  },
+  '.ProseMirror .custom-bullet-list li::after': {
+    content: '"-"',      // Define o hífen como marcador
+    position: 'absolute',
+    left: '-1em',        // Posiciona o hífen à esquerda
+    // fontWeight: 'bold',  // Opcional: deixa o hífen mais visível
   },
   // Estilos para tabelas
   '.ProseMirror table': {
@@ -248,17 +272,114 @@ const TextEditor = forwardRef(({
     extensions: [
       StarterKit.configure({
         history: false,
-        bulletList: {
-          keepMarks: true,
-          keepAttributes: false,
-          HTMLAttributes: {
-            class: 'custom-bullet-list',
-          },
-        },
+        bulletList: false, // Desabilita a lista de pontos. descomentar abaixo para reabilitar
+        // bulletList: {
+        //   keepMarks: true,
+        //   keepAttributes: false,
+        //   HTMLAttributes: {
+        //     class: 'custom-bullet-list',
+        //   },
+        // },
         paragraph: {
           HTMLAttributes: {
             class: 'editor-paragraph',
           },
+        },
+      }),
+
+      BulletList.extend({
+        addInputRules() {
+          return [];         
+          
+        }      
+      }).configure({
+        // keepMarks: true,
+        // keepAttributes: false,
+        HTMLAttributes: {
+          class: 'custom-bullet-list',
+        }
+      }),
+
+      Extension.create({
+        name: 'CapitalizarAposPonto',
+        
+        addProseMirrorPlugins() {
+          return [
+            new Plugin({
+              key: new PluginKey('auto-capitalize'),
+              appendTransaction: (transactions, oldState, newState) => {
+                const tr = newState.tr;
+                let modified = false;
+
+                // Verifica se houve inserção de texto
+                if (!transactions.some(transaction => transaction.docChanged)) {
+                  return null;
+                }
+
+                // Itera sobre as mudanças para encontrar inserção de texto
+                transactions.forEach(transaction => {
+                  transaction.steps.forEach(step => {
+                    // Se foi uma inserção de texto
+                    if (step.slice) { 
+                      step.getMap().forEach((oldStart, oldEnd, newStart, newEnd) => {
+                        // Pega o texto ao redor da inserção
+                        const $pos = newState.doc.resolve(newStart);
+                        
+                        // Verifica o caractere anterior e o antepenúltimo (para ver se é ". ")
+                        const textBefore = newState.doc.textBetween(Math.max(0, newStart - 2), newStart, '\n', '\0');
+                        const charInserted = newState.doc.textBetween(newStart, newEnd, '\n', '\0');
+
+                        // Se inseriu uma letra minúscula e antes tinha ". " ou "? " ou "! "
+                        if (
+                          charInserted.length === 1 && 
+                          /[a-z]/.test(charInserted) && 
+                          /[.?!]\s$/.test(textBefore)
+                        ) {
+                          tr.insertText(charInserted.toUpperCase(), newStart, newEnd);
+                          modified = true;
+                        }
+                      });
+                    }
+                  });
+                });
+
+                return modified ? tr : null;
+              },
+            }),
+          ];
+        },
+        addInputRules() {
+          return [
+            // Regra 1: Capitaliza primeira letra de um parágrafo novo
+            new InputRule({
+              find: /^(?:^|[.?!]\s+)([a-z])$/, // Busca letra minúscula no início ou após pontuação
+              handler: ({ state, range, match }) => {
+                const { tr } = state;
+                const start = range.from;
+                const end = range.to;
+                const capitalized = match[1].toUpperCase();
+                
+                // Substitui a letra minúscula pela maiúscula
+                tr.insertText(capitalized, start, end);
+                return true;
+              }
+            }),
+            // Regra 2: Capitaliza letra após "hífen + espaço" (ex: "- a" -> "- A")
+            new InputRule({
+              find: /-\s([a-z])$/,  // Busca: hífen, espaço, letra minúscula
+              handler: ({ state, range, match }) => {
+                const { tr } = state;
+                const end = range.to; // Posição após a letra
+                const start = end - 1; // Posição antes da letra (para substituir só 1 caractere)
+                
+                // O match[1] contém a letra capturada pelo ([a-z])
+                const capitalized = match[1].toUpperCase();
+                
+                // Substitui a letra minúscula pela maiúscula
+                tr.insertText(capitalized, start, end);
+              }
+            })
+          ];
         },
       }),
       History.configure({
@@ -293,6 +414,7 @@ const TextEditor = forwardRef(({
     editorProps: {
       attributes: {
         class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none',
+        autocapitalize: 'sentences',
       },
     },
 
@@ -1031,7 +1153,7 @@ const TextEditor = forwardRef(({
             <RichTextEditor.ControlsGroup>
               {/* ✅ Botão de gravação usando o hook useAudioTranscription */}
               <Tooltip 
-                label={`${isRecording ? "Parar" : "Iniciar"} Gravação (Shift+A)`}
+                label={`${isRecording ? "Parar" : "Iniciar"} Gravação (Esc)`}
                 position="bottom"
                 withArrow
               >
@@ -1461,6 +1583,27 @@ const TextEditor = forwardRef(({
           50% { opacity: 0.5; }
           100% { opacity: 1; }
         }
+
+        /* NOVO: Força a substituição do bullet por hífen */
+        .ProseMirror ul, 
+        .ProseMirror .custom-bullet-list {
+          list-style-type: none !important;
+          padding-left: 1.5em !important;
+        }
+
+        .ProseMirror ul li, 
+        .ProseMirror .custom-bullet-list li {
+          position: relative !important;
+        }
+
+        .ProseMirror ul li::before, 
+        .ProseMirror .custom-bullet-list li::before {
+          content: "-" !important;
+          position: absolute !important;
+          left: -1.5em !important;
+          color: black !important; /* Garante que seja visível */
+        }
+        /* FIM DO NOVO BLOCO */
         
         /* Estilos adicionais para tabelas */
         .ProseMirror table {

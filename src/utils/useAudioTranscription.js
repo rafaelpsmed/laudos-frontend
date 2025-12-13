@@ -50,18 +50,18 @@ export const useAudioTranscription = ({
    * @param {string} texto - Texto a ser processado
    * @returns {string} - Texto processado com pontuação
    */
-  const adicionarPontuacao = useCallback((texto) => {
+  const adicionarPontuacao = useCallback((texto, forcarMaiuscula = false, precisaEspaco = true) => {
     let textoProcessado = texto.trim();
     
     // Substitui palavras por pontuação
     // \b é um ancorador que indica o limite da palavra
-    textoProcessado = textoProcessado.replace(/vírgula\b/gi, ',');
-    textoProcessado = textoProcessado.replace(/virgula\b/gi, ',');
-    textoProcessado = textoProcessado.replace(/ponto final\b/gi, '.');
-    textoProcessado = textoProcessado.replace(/ponto e vírgula\b/gi, ';');
-    textoProcessado = textoProcessado.replace(/ponto e virgula\b/gi, ';');
-    textoProcessado = textoProcessado.replace(/hífen\b/gi, '-');
-    textoProcessado = textoProcessado.replace(/hifen\b/gi, '-');
+    textoProcessado = textoProcessado.replace(/\s*vírgula\s*\b/gi, ', ');
+    textoProcessado = textoProcessado.replace(/\s*virgula\s*\b/gi, ', ');
+    textoProcessado = textoProcessado.replace(/\s*ponto final\s*\b/gi, '. ');
+    textoProcessado = textoProcessado.replace(/\s*ponto e vírgula\s*\b/gi, '; ');
+    textoProcessado = textoProcessado.replace(/\s*ponto e virgula\s*\b/gi, '; ');
+    textoProcessado = textoProcessado.replace(/hífen\b/gi, '- ');
+    textoProcessado = textoProcessado.replace(/hifen\b/gi, '- ');
     textoProcessado = textoProcessado.replace(/nova linha\b/gi, '\n');
     textoProcessado = textoProcessado.replace(/próxima linha\b/gi, '\n');
     textoProcessado = textoProcessado.replace(/parágrafo\b/gi, '\n');
@@ -75,53 +75,167 @@ export const useAudioTranscription = ({
     textoProcessado = textoProcessado.replace(/-\s+([a-z])/g, (match, letter) => {
       return '- ' + letter.toUpperCase();
     });
+
+    // Capitaliza a primeira letra se o contexto exigir (ex: início de frase)
+    if (forcarMaiuscula && textoProcessado.length > 0) {
+      const primeiraLetra = textoProcessado.charAt(0).toUpperCase();
+      textoProcessado = primeiraLetra + textoProcessado.slice(1);
+    }
     
-    return textoProcessado + ' ';
+    // Adiciona espaço no início se necessário
+    return (precisaEspaco ? ' ' : '') + textoProcessado;
+  }, []);
+
+  /**
+   * Função para corrigir texto usando Groq (Llama 3)
+   */
+  const corrigirTextoComGroq = useCallback(async (texto, deveCapitalizar) => {
+    const apiKey = import.meta.env.VITE_GROQ_API_KEY; // Ler do .env
+    
+    if (!apiKey) return null; // Sem chave, retorna null para usar fallback
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile", // Modelo muito rápido e gratuito
+          messages: [
+            {
+              role: "system",
+              content: `Você é um assistente especialista em corrigir transcrições de laudos médicos radiológicos em português. 
+              Sua tarefa é apenas pontuar corretamente, e corrigir a gramática e os termos técnicos radiológicos do texto fornecido.
+              Regras:
+              1. NÃO adicione nenhum texto extra, explicação ou "Aqui está". Retorne APENAS o texto corrigido.
+              2. Mantenha o sentido técnico médico e radiológico.
+              3. Insira vírgulas, pontos e outros sinais de pontuação onde gramaticalmente necessário.
+              4. As medidas devem ser em centímetros, a menos que seja especificado outro tipo de medida, e devem estar no seguinte formato: A x B cm (A e B são as medidas). Ordenar as medidas da maior para a menor.
+
+              
+
+              6. ${deveCapitalizar ? 'Comece a frase com letra Maiúscula.' : 'Mantenha a caixa alta/baixa original da primeira palavra, a menos que seja nome próprio.'}`
+            },
+            // 5. Se for pedido para calcular o volume, deve ser calculado o volume em centímetros cúbicos, dessa forma: A*B*C*0.523 e deve ser colocado no seguinte formato: A x B x C cm³ (A, B e C são as medidas). 
+            // Ordenar as medidas da maior para a menor. Não precisa mostar a fórmula do cálculo do volume.
+            {
+              role: "user",
+              content: texto
+            }
+          ],
+          temperature: 0.1, // Baixa temperatura para ser mais determinístico
+          max_tokens: 1024
+        })
+      });
+
+      const data = await response.json();
+      if (data.choices && data.choices[0]) {
+        return data.choices[0].message.content.trim();
+      }
+      return null;
+    } catch (error) {
+      console.error('Erro ao chamar Groq:', error);
+      return null; // Em caso de erro, usa o fallback
+    }
   }, []);
 
   /**
    * Insere o texto acumulado no editor ou textarea
    */
-  const insertAccumulatedText = useCallback(() => {
+  const insertAccumulatedText = useCallback(async () => {
     const texto = accumulatedTextRef.current.trim();
     
     if (!texto) {
-      // console.log('⚠️ Nenhum texto acumulado para inserir');
       return;
     }
 
-    // console.log('📝 Inserindo texto acumulado:', texto);
-    const textoProcessado = adicionarPontuacao(texto);
+    // Determina se deve capitalizar baseado no contexto anterior
+    let deveCapitalizar = false;
+    let precisaEspaco = true;
+
+    if (editorRef.current) {
+      const { state } = editorRef.current;
+      const { from } = state.selection;
+      
+      // Se é o início do documento
+      if (from <= 1) {
+        deveCapitalizar = true;
+        precisaEspaco = false;
+      } else {
+        // Verifica se é início de bloco/parágrafo
+        const $pos = state.doc.resolve(from);
+        const isStartOfBlock = $pos.parentOffset === 0;
+
+        // Pega os últimos caracteres antes do cursor para capitalização
+        const textoAnterior = state.doc.textBetween(Math.max(0, from - 5), from, '\n', ' ');
+        
+        // Verifica se termina com pontuação que exige maiúscula (. ? ! -) OU se é início de parágrafo
+        if (/[.?!-]\s*$/.test(textoAnterior) || isStartOfBlock) {
+          deveCapitalizar = true;
+        }
+
+        // Pega apenas o último caractere para verificação de espaço
+        const ultimoCaractere = state.doc.textBetween(Math.max(0, from - 1), from, '\n', '\n');
+        
+        // Se o último caractere for espaço OU se for início de um bloco (nova linha), NÃO precisa de espaço
+        if (/\s$/.test(ultimoCaractere) || isStartOfBlock) {
+          precisaEspaco = false;
+        }
+      }
+    } else if (textoStateRef.current) {
+      const textoAnterior = textoStateRef.current;
+      if (!textoAnterior || /[.?!]\s*$/.test(textoAnterior.trim())) {
+        deveCapitalizar = true;
+      }
+      if (!textoAnterior || /\s$/.test(textoAnterior)) {
+        precisaEspaco = false;
+      }
+    }
+
+    // Tenta corrigir com IA
+    let textoFinal = null;
     
+    const textoIA = await corrigirTextoComGroq(texto, deveCapitalizar);
+    
+    if (textoIA) {
+        // Se a IA retornou sucesso, usamos o texto dela
+        // A IA já deve ter capitalizado se pedimos, mas o espaço inicial nós controlamos
+        textoFinal = (precisaEspaco ? ' ' : '') + textoIA;
+    } else {
+        // Fallback: Se não tem chave ou deu erro, usa o método antigo (Regex)
+        textoFinal = adicionarPontuacao(texto, deveCapitalizar, precisaEspaco);
+    }
+
     // Se há editor TipTap
     if (editorRef.current) {
       try {
         const { from } = editorRef.current.state.selection;
         editorRef.current.chain()
           .focus()
-          .insertContentAt(from, textoProcessado)
+          .insertContentAt(from, textoFinal)
           .run();
-        // console.log('✅ Texto inserido no editor:', textoProcessado);
       } catch (error) {
         console.error('❌ Erro ao inserir no editor:', error);
       }
     } 
     // Se há textarea com estado controlado
     else if (setTextoStateRef.current) {
-      const textoFinal = textoStateRef.current + ' ' + textoProcessado;
-      setTextoStateRef.current(textoFinal);
-      // console.log('✅ Texto inserido em textarea');
+      const conteudoAtual = textoStateRef.current || '';
+      const novoConteudo = conteudoAtual + textoFinal;
+      setTextoStateRef.current(novoConteudo);
     }
 
     // Callback de conclusão
     if (onTranscriptionComplete) {
-      onTranscriptionComplete(textoProcessado);
+      onTranscriptionComplete(textoFinal);
     }
 
     // Limpa texto acumulado e preview
     accumulatedTextRef.current = '';
     setPreviewText('');
-  }, [adicionarPontuacao, onTranscriptionComplete]);
+  }, [adicionarPontuacao, onTranscriptionComplete, corrigirTextoComGroq]);
 
   /**
    * Alterna o estado de gravação (inicia ou para)
@@ -443,4 +557,3 @@ export const useAudioTranscription = ({
 };
 
 export default useAudioTranscription;
-
