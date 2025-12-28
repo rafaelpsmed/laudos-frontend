@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import api from '../api';
 
 /**
  * Hook customizado para transcrição de áudio para texto com reconhecimento de voz
@@ -87,56 +88,23 @@ export const useAudioTranscription = ({
   }, []);
 
   /**
-   * Função para corrigir texto usando Groq (Llama 3)
+   * Função para corrigir texto usando Groq via backend (seguro)
    */
   const corrigirTextoComGroq = useCallback(async (texto, deveCapitalizar) => {
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY; // Ler do .env
-    
-    if (!apiKey) return null; // Sem chave, retorna null para usar fallback
-
     try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile", // Modelo muito rápido e gratuito
-          messages: [
-            {
-              role: "system",
-              content: `Você é um assistente especialista em corrigir transcrições de laudos médicos radiológicos em português. 
-              Sua tarefa é apenas pontuar corretamente, e corrigir a gramática e os termos técnicos radiológicos do texto fornecido.
-              Regras:
-              1. NÃO adicione nenhum texto extra, explicação ou "Aqui está". Retorne APENAS o texto corrigido.
-              2. Mantenha o sentido técnico médico e radiológico.
-              3. Insira vírgulas, pontos e outros sinais de pontuação onde gramaticalmente necessário.
-              4. As medidas devem ser em centímetros, a menos que seja especificado outro tipo de medida, e devem estar no seguinte formato: A x B cm (A e B são as medidas). Ordenar as medidas da maior para a menor.
-
-              
-
-              6. ${deveCapitalizar ? 'Comece a frase com letra Maiúscula.' : 'Mantenha a caixa alta/baixa original da primeira palavra, a menos que seja nome próprio.'}`
-            },
-            // 5. Se for pedido para calcular o volume, deve ser calculado o volume em centímetros cúbicos, dessa forma: A*B*C*0.523 e deve ser colocado no seguinte formato: A x B x C cm³ (A, B e C são as medidas). 
-            // Ordenar as medidas da maior para a menor. Não precisa mostar a fórmula do cálculo do volume.
-            {
-              role: "user",
-              content: texto
-            }
-          ],
-          temperature: 0.1, // Baixa temperatura para ser mais determinístico
-          max_tokens: 1024
-        })
+      // Chama o endpoint do backend
+      const response = await api.post('/api/ia/corrigir_texto/', {
+        texto: texto,
+        deve_capitalizar: deveCapitalizar
       });
 
-      const data = await response.json();
-      if (data.choices && data.choices[0]) {
-        return data.choices[0].message.content.trim();
+      if (response.data && response.data.texto_corrigido) {
+        return response.data.texto_corrigido;
       }
+      
       return null;
     } catch (error) {
-      console.error('Erro ao chamar Groq:', error);
+      // console.error('Erro ao corrigir texto via backend:', error);
       return null; // Em caso de erro, usa o fallback
     }
   }, []);
@@ -197,13 +165,16 @@ export const useAudioTranscription = ({
     // Tenta corrigir com IA
     let textoFinal = null;
     
+    // console.log('🔄 Tentando corrigir texto com Groq...');
     const textoIA = await corrigirTextoComGroq(texto, deveCapitalizar);
     
     if (textoIA) {
+        // console.log('✅ Usando texto corrigido pela IA');
         // Se a IA retornou sucesso, usamos o texto dela
         // A IA já deve ter capitalizado se pedimos, mas o espaço inicial nós controlamos
         textoFinal = (precisaEspaco ? ' ' : '') + textoIA;
     } else {
+        // console.log('⚠️ Usando fallback (regex) - Groq não disponível ou retornou null');
         // Fallback: Se não tem chave ou deu erro, usa o método antigo (Regex)
         textoFinal = adicionarPontuacao(texto, deveCapitalizar, precisaEspaco);
     }
@@ -217,7 +188,7 @@ export const useAudioTranscription = ({
           .insertContentAt(from, textoFinal)
           .run();
       } catch (error) {
-        console.error('❌ Erro ao inserir no editor:', error);
+        // console.error('❌ Erro ao inserir no editor:', error);
       }
     } 
     // Se há textarea com estado controlado
@@ -244,7 +215,7 @@ export const useAudioTranscription = ({
     // console.log('🎤 toggleRecording chamado. isRecording:', isRecording, 'recognition:', recognition);
     
     if (!recognition) {
-      console.error('❌ Recognition não disponível');
+      // console.error('❌ Recognition não disponível');
       alert('Seu navegador não suporta reconhecimento de voz.');
       return;
     }
@@ -287,11 +258,11 @@ export const useAudioTranscription = ({
         setPreviewText('');
         // console.log('✅ Gravação iniciada com sucesso');
       } catch (error) {
-        console.error('❌ Erro ao iniciar gravação:', error);
+        // console.error('❌ Erro ao iniciar gravação:', error);
         if (error.name === 'NotAllowedError') {
           alert('Por favor, permita o acesso ao microfone para usar esta função.');
         } else {
-          console.error('Erro ao iniciar gravação:', error);
+          // console.error('Erro ao iniciar gravação:', error);
           alert('Erro ao iniciar a gravação. Por favor, tente novamente.');
         }
         setIsRecording(false);
@@ -352,7 +323,7 @@ export const useAudioTranscription = ({
     // console.log('⏱️ Tempo de pausa configurado:', pauseDelay, 'ms');
     
     if (!('webkitSpeechRecognition' in window)) {
-      console.warn('❌ Reconhecimento de voz não suportado neste navegador');
+      // console.warn('❌ Reconhecimento de voz não suportado neste navegador');
       return;
     }
 
@@ -360,6 +331,119 @@ export const useAudioTranscription = ({
     recognitionInstance.continuous = true; // ✅ SEMPRE contínuo agora
     recognitionInstance.interimResults = true;
     recognitionInstance.lang = 'pt-BR';
+
+
+    // recognitionInstance.phrases = phraseObjects;
+    
+    // ✅ CONTEXTUAL BIASING: Lista de termos médicos/radiológicos para melhorar reconhecimento
+    const termosMedicos = [
+      // Termos anatômicos comuns
+      { phrase: "fígado", boost: 5.0 },
+      { phrase: "pâncreas", boost: 5.0 },
+      { phrase: "baço", boost: 5.0 },
+      { phrase: "rim", boost: 5.0 },
+      { phrase: "rins", boost: 5.0 },
+      { phrase: "pulmão", boost: 5.0 },
+      { phrase: "pulmões", boost: 5.0 },
+      { phrase: "coração", boost: 5.0 },
+      { phrase: "estômago", boost: 5.0 },
+      { phrase: "intestino", boost: 5.0 },
+      { phrase: "vesícula", boost: 5.0 },
+      { phrase: "vesícula biliar", boost: 5.0 },
+      
+      // Termos radiológicos
+      { phrase: "tomografia", boost: 6.0 },
+      { phrase: "ressonância", boost: 6.0 },
+      { phrase: "ultrassom", boost: 6.0 },
+      { phrase: "raio-x", boost: 6.0 },
+      { phrase: "raio x", boost: 6.0 },
+      { phrase: "mamografia", boost: 6.0 },
+      { phrase: "densitometria", boost: 6.0 },
+      
+      // Termos de medida e dimensões
+      { phrase: "centímetros", boost: 4.0 },
+      { phrase: "centímetro", boost: 4.0 },
+      { phrase: "milímetros", boost: 4.0 },
+      { phrase: "milímetro", boost: 4.0 },
+      { phrase: "cm", boost: 4.0 },
+      { phrase: "mm", boost: 4.0 },
+      
+      // Termos descritivos comuns
+      { phrase: "hipodenso", boost: 5.0 },
+      { phrase: "hiperdenso", boost: 5.0 },
+      { phrase: "isodenso", boost: 5.0 },
+      { phrase: "hipointenso", boost: 5.0 },
+      { phrase: "hiperintenso", boost: 5.0 },
+      { phrase: "isointenso", boost: 5.0 },
+      { phrase: "heterogêneo", boost: 5.0 },
+      { phrase: "homogêneo", boost: 5.0 },
+      { phrase: "bem delimitado", boost: 5.0 },
+      { phrase: "mal delimitado", boost: 5.0 },
+      { phrase: "bem definido", boost: 5.0 },
+      { phrase: "mal definido", boost: 5.0 },
+      
+      // Termos de localização
+      { phrase: "superior", boost: 4.0 },
+      { phrase: "inferior", boost: 4.0 },
+      { phrase: "anterior", boost: 4.0 },
+      { phrase: "posterior", boost: 4.0 },
+      { phrase: "lateral", boost: 4.0 },
+      { phrase: "medial", boost: 4.0 },
+      { phrase: "direito", boost: 4.0 },
+      { phrase: "esquerdo", boost: 4.0 },
+      { phrase: "terço", boost: 4.0 },
+      { phrase: "terço superior", boost: 4.0 },
+      { phrase: "terço inferior", boost: 4.0 },
+      { phrase: "terço médio", boost: 4.0 },
+      { phrase: "terço medial", boost: 4.0 },
+      { phrase: "terço lateral", boost: 4.0 },
+      
+      // Termos de patologia comum
+      { phrase: "nódulo", boost: 6.0 },
+      { phrase: "nódulos", boost: 6.0 },
+      { phrase: "massa", boost: 6.0 },
+      { phrase: "lesão", boost: 6.0 },
+      { phrase: "lesões", boost: 6.0 },
+      { phrase: "cisto", boost: 6.0 },
+      { phrase: "cistos", boost: 6.0 },
+      { phrase: "calcificação", boost: 6.0 },
+      { phrase: "calcificações", boost: 6.0 },
+      { phrase: "derrame", boost: 5.0 },
+      { phrase: "edema", boost: 5.0 },
+      { phrase: "espessamento", boost: 5.0 },
+      { phrase: "atelectasia", boost: 6.0 },
+      { phrase: "consolidação", boost: 6.0 },
+      { phrase: "infiltrado", boost: 6.0 },
+      { phrase: "infiltrados", boost: 6.0 },
+    ];
+
+
+
+    // ✅ CONTEXTUAL BIASING: Aplica apenas se o navegador suportar
+    // NÃO FUNCIONOU, QUEBROU A GRAVAÇÃO
+
+    // Verifica se a propriedade 'phrases' existe no objeto antes de tentar usar
+    // if ('phrases' in recognitionInstance) {
+    //   try {
+    //     // Tenta usar SpeechRecognitionPhrase se disponível
+    //     if (window.SpeechRecognitionPhrase) {
+    //       const phraseObjects = termosMedicos.map(
+    //         (termo) => new window.SpeechRecognitionPhrase(termo.phrase, termo.boost)
+    //       );
+    //       recognitionInstance.phrases = phraseObjects;
+    //       console.log('✅ Contextual biasing aplicado com', phraseObjects.length, 'termos médicos');
+    //     } else {
+    //       // Fallback: tenta usar objetos simples se SpeechRecognitionPhrase não existir
+    //       recognitionInstance.phrases = termosMedicos;
+    //       console.log('✅ Contextual biasing aplicado (modo fallback)');
+    //     }
+    //   } catch (error) {
+    //     console.warn('⚠️ Erro ao aplicar contextual biasing:', error);
+    //     // Continua sem contextual biasing - não é crítico
+    //   }
+    // } else {
+    //   console.log('ℹ️ Contextual biasing não suportado neste navegador. Continuando sem bias.');
+    // }
     
     // console.log('✅ Reconhecimento criado em modo CONTÍNUO');
 
@@ -406,7 +490,14 @@ export const useAudioTranscription = ({
     };
 
     recognitionInstance.onerror = (event) => {
-      console.error('❌ Erro no reconhecimento:', event.error);
+      // Ignora erros relacionados a contextual biasing (não são críticos)
+      if (event.error === 'phrases-not-supported' || event.error === 'not-allowed') {
+        // console.warn('⚠️ Contextual biasing não suportado, mas continuando com reconhecimento normal');
+        // Não para a gravação por causa desse erro - é apenas um aviso
+        return;
+      }
+      
+      // console.error('❌ Erro no reconhecimento:', event.error);
       
       // Cancela timer se houver erro
       if (pauseTimerRef.current) {
@@ -417,9 +508,11 @@ export const useAudioTranscription = ({
       // 'aborted' não é um erro real, é apenas quando o usuário para manualmente
       if (event.error === 'aborted') {
         paradaIntencionalRef.current = true;
-      } else {
-        console.error('Erro no reconhecimento de voz:', event.error);
+        setIsRecording(false);
+        return;
       }
+      
+      // Para outros erros, para a gravação
       setIsRecording(false);
     };
     
@@ -447,7 +540,7 @@ export const useAudioTranscription = ({
             recognitionInstance.start();
             // console.log('✅ Reconhecimento reiniciado');
           } catch (error) {
-            console.error('❌ Erro ao reiniciar:', error);
+            // console.error('❌ Erro ao reiniciar:', error);
             setIsRecording(false);
           }
         }, 100);

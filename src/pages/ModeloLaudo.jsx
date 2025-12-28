@@ -37,7 +37,7 @@ function ModeloLaudo() {
         }));
         setMetodos(metodosFormatados);
       } catch (error) {
-        console.error('Erro ao buscar métodos:', error);
+        // console.error('Erro ao buscar métodos:', error);
       }
     };
 
@@ -54,11 +54,11 @@ function ModeloLaudo() {
         if (response.data && Array.isArray(response.data)) {
           setTitulosDisponiveis(response.data);
         } else {
-          console.error('Resposta da API não é um array:', response.data);
+          // console.error('Resposta da API não é um array:', response.data);
         }
       } catch (error) {
-        console.error('Erro ao buscar títulos iniciais:', error);
-        console.error('Detalhes do erro:', error.response?.data);
+        // console.error('Erro ao buscar títulos iniciais:', error);
+        // console.error('Detalhes do erro:', error.response?.data);
       }
     };
 
@@ -85,8 +85,8 @@ function ModeloLaudo() {
           setTitulosDisponiveis(response.data);
         }
       } catch (error) {
-        console.error('Erro ao buscar títulos:', error);
-        console.error('Detalhes do erro:', error.response?.data);
+        // console.error('Erro ao buscar títulos:', error);
+        // console.error('Detalhes do erro:', error.response?.data);
       }
     };
 
@@ -127,12 +127,13 @@ function ModeloLaudo() {
         // console.log('Método selecionado:', metodoId);
       }
     } catch (error) {
-      console.error('Erro ao buscar modelo completo:', error);
+      // console.error('Erro ao buscar modelo completo:', error);
       alert('Erro ao carregar o modelo. Por favor, tente novamente.');
     }
   };
 
   // Modifique handleSave para usar o novo editor
+  // Agora verifica se há modeloId: se houver, edita (PUT), se não, cria (POST)
   const handleSave = async () => {
     if (!titulo.trim()) {
       alert('Por favor, insira um título');
@@ -146,10 +147,10 @@ function ModeloLaudo() {
       alert('Por favor, selecione apenas um método');
       return;
     }
-          if (!texto || texto === '<p></p>' || texto === '') {
-        alert('Por favor, insira o conteúdo do modelo');
-        return;
-      }
+    if (!texto || texto === '<p></p>' || texto === '') {
+      alert('Por favor, insira o conteúdo do modelo');
+      return;
+    }
 
     try {
       setSaving(true);
@@ -166,16 +167,34 @@ function ModeloLaudo() {
         usuario: userId
       };
 
-      const response = await api.post('/api/modelo_laudo/', modeloData);
-      // console.log('Resposta da API:', response.data);
+      let response;
+      // Se há modeloId, edita o modelo existente
+      if (modeloId) {
+        response = await api.put(`/api/modelo_laudo/${modeloId}/`, modeloData);
+        // Atualiza a lista de títulos após editar
+        const responseTitulos = await api.get('/api/modelo_laudo/');
+        if (metodosSelected.length > 0) {
+          const modelosFiltrados = responseTitulos.data.filter(modelo => 
+            metodosSelected.includes(modelo.metodo.toString())
+          );
+          setTitulosDisponiveis(modelosFiltrados);
+        } else {
+          setTitulosDisponiveis(responseTitulos.data);
+        }
+        alert('Modelo atualizado com sucesso!');
+      } else {
+        // Se não há modeloId, cria um novo modelo
+        response = await api.post('/api/modelo_laudo/', modeloData);
+        alert('Modelo salvo com sucesso!');
+      }
       
+      // Limpa os campos após salvar/editar
       setTitulo('');
       setMetodosSelected([]);
+      setModeloId(null);
       setTexto('');
-      
-      alert('Modelo salvo com sucesso!');
     } catch (error) {
-      console.error('Erro ao salvar modelo:', error);
+      // console.error('Erro ao salvar modelo:', error);
       const errorMessage = error.response?.data?.error || 'Erro ao salvar o modelo. Por favor, tente novamente.';
       alert(errorMessage);
     } finally {
@@ -237,8 +256,8 @@ function ModeloLaudo() {
 
       alert('Modelo atualizado com sucesso!');
     } catch (error) {
-      console.error('Erro ao atualizar modelo:', error);
-      console.error('Detalhes do erro:', error.response?.data);
+      // console.error('Erro ao atualizar modelo:', error);
+      // console.error('Detalhes do erro:', error.response?.data);
       alert('Erro ao atualizar o modelo. Por favor, tente novamente.');
     }
   };
@@ -259,7 +278,7 @@ function ModeloLaudo() {
       setShowDeleteWarning(frasesDoModelo.length > 0);
       setDeleteModalOpen(true);
     } catch (error) {
-      console.error('Erro ao verificar frases vinculadas:', error);
+      // console.error('Erro ao verificar frases vinculadas:', error);
       alert('Erro ao verificar frases vinculadas. Por favor, tente novamente.');
     }
   };
@@ -305,8 +324,8 @@ function ModeloLaudo() {
 
       alert('Modelo excluído com sucesso!');
     } catch (error) {
-      console.error('Erro ao excluir modelo:', error);
-      console.error('Detalhes do erro:', error.response?.data);
+      // console.error('Erro ao excluir modelo:', error);
+      // console.error('Detalhes do erro:', error.response?.data);
       
       let mensagemErro = 'Erro ao excluir o modelo. ';
       if (error.response?.data?.detail) {
@@ -353,7 +372,7 @@ function ModeloLaudo() {
           const response = await api.get('/api/auth/me/');
           setUsername(response.data.email);
         } catch (error) {
-          console.error('Erro ao buscar dados do usuário:', error);
+          // console.error('Erro ao buscar dados do usuário:', error);
         }
       }
     };
@@ -395,7 +414,11 @@ function ModeloLaudo() {
                 value={titulo}              
                 onChange={(event) => {
                   setTitulo(event.currentTarget.value);
-                  setModeloId(null); // Limpa o modeloId quando o título é alterado manualmente
+                  // Não limpa o modeloId aqui - permite editar o título de um modelo existente
+                  // O modeloId só é limpo quando:
+                  // 1. Um novo método é selecionado (handleMetodosChange)
+                  // 2. Um novo modelo é selecionado do combobox (fetchModeloCompleto)
+                  // 3. Os campos são limpos manualmente (handleClear)
                 }}
                 onClick={() => combobox.openDropdown()}
                 rightSection={<Combobox.Chevron />}

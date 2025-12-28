@@ -1,7 +1,8 @@
-import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper, ActionIcon } from '@mantine/core';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff } from '@tabler/icons-react';
+import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper, ActionIcon, Select } from '@mantine/core';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff, IconHelp, IconGripVertical } from '@tabler/icons-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { jwtDecode } from "jwt-decode";
 import { ACCESS_TOKEN } from '../constants';
 import api from '../api';
@@ -41,10 +42,179 @@ function Frases() {
   const [titulosFiltrados, setTitulosFiltrados] = useState([]);
   const [modalAberto, setModalAberto] = useState(false);
   const [modalVariavelLocalAberto, setModalVariavelLocalAberto] = useState(false);
-  const [opcoesVariavelLocal, setOpcoesVariavelLocal] = useState('');
+  const [opcoesVariavelLocal, setOpcoesVariavelLocal] = useState(''); // Mantido para compatibilidade com formato antigo
+  // Estados para variável local completa (novo formato)
+  const [variavelLocalTipoControle, setVariavelLocalTipoControle] = useState('');
+  const [variavelLocalTitulo, setVariavelLocalTitulo] = useState('');
+  const [variavelLocalLabel, setVariavelLocalLabel] = useState('');
+  const [variavelLocalDescricao, setVariavelLocalDescricao] = useState('');
+  const [variavelLocalValor, setVariavelLocalValor] = useState('');
+  const [variavelLocalValores, setVariavelLocalValores] = useState([]);
+  const [variavelLocalDelimitador, setVariavelLocalDelimitador] = useState('');
+  const [variavelLocalUltimoDelimitador, setVariavelLocalUltimoDelimitador] = useState('');
   const [treeData, setTreeData] = useState([]);
   const [treeDataSemMetodos, setTreeDataSemMetodos] = useState([]);
   const [treeDataModelo, setTreeDataModelo] = useState([]);
+  
+  // Estados para edição de variável local
+  const [editandoVariavelLocal, setEditandoVariavelLocal] = useState(false);
+  const [variavelLocalTextoOriginal, setVariavelLocalTextoOriginal] = useState(''); // Texto formatado que será substituído
+  
+  // Mapeamento simples: [LOCAL: Título] → {JSON}
+  const mapeamentoVariaveisLocaisRef = useRef(new Map());
+
+  // Função para formatar texto para exibição (substitui {JSON} por [LOCAL: Título])
+  const formatarTextoParaExibicao = (texto) => {
+    if (!texto) return texto;
+    
+    // Limpa o mapeamento antes de recriar
+    mapeamentoVariaveisLocaisRef.current.clear();
+    
+    // Procura por JSONs que começam com {"tipo":"variavelLocal"
+    // Usa uma abordagem mais robusta: procura por { seguido de "tipo":"variavelLocal"
+    let textoFormatado = texto;
+    let posicao = 0;
+    
+    while (posicao < textoFormatado.length) {
+      // Procura pelo início de um JSON de variável local
+      const inicioJson = textoFormatado.indexOf('{"tipo":"variavelLocal"', posicao);
+      if (inicioJson === -1) {
+        // Também tenta sem aspas no valor (caso o JSON tenha sido salvo sem aspas)
+        const inicioJsonSemAspas = textoFormatado.indexOf('{"tipo":variavelLocal', posicao);
+        if (inicioJsonSemAspas === -1) break;
+        posicao = inicioJsonSemAspas;
+      } else {
+        posicao = inicioJson;
+      }
+      
+      // Encontra o { correspondente
+      const inicio = posicao;
+      let profundidade = 0;
+      let fim = inicio;
+      let dentroString = false;
+      let escape = false;
+      
+      // Percorre o texto para encontrar o } correspondente
+      for (let i = inicio; i < textoFormatado.length; i++) {
+        const char = textoFormatado[i];
+        
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        
+        if (char === '\\') {
+          escape = true;
+          continue;
+        }
+        
+        if (char === '"' && !escape) {
+          dentroString = !dentroString;
+          continue;
+        }
+        
+        if (dentroString) continue;
+        
+        if (char === '{') {
+          profundidade++;
+        } else if (char === '}') {
+          profundidade--;
+          if (profundidade === 0) {
+            fim = i + 1;
+            break;
+          }
+        }
+      }
+      
+      if (fim > inicio) {
+        // Extrai o JSON completo
+        const jsonString = textoFormatado.substring(inicio, fim);
+        
+        try {
+          // Tenta parsear o JSON (pode precisar corrigir aspas se necessário)
+          let jsonParaParsear = jsonString;
+          // Se o JSON não tiver aspas no valor de tipo, adiciona
+          if (jsonString.includes('"tipo":variavelLocal')) {
+            jsonParaParsear = jsonString.replace(/"tipo":variavelLocal/g, '"tipo":"variavelLocal"');
+          }
+          
+          const estruturaVariavel = JSON.parse(jsonParaParsear);
+          
+          // Verifica se é uma variável local
+          if (estruturaVariavel.tipo === 'variavelLocal') {
+            // Extrai o título (prioriza label, depois titulo)
+            const titulo = estruturaVariavel.label || estruturaVariavel.titulo || 'Variável Local';
+            
+            // Cria o texto formatado
+            const textoFormatadoLocal = `[LOCAL: ${titulo}]`;
+            
+            // Salva o mapeamento: [LOCAL: Título] → {JSON}
+            mapeamentoVariaveisLocaisRef.current.set(textoFormatadoLocal, jsonString);
+            // console.log('📝 Mapeamento criado:', textoFormatadoLocal, '→', jsonString.substring(0, 100));
+            
+            // Substitui o JSON pelo texto formatado
+            textoFormatado = textoFormatado.substring(0, inicio) + textoFormatadoLocal + textoFormatado.substring(fim);
+            
+            // Atualiza a posição para continuar procurando
+            posicao = inicio + textoFormatadoLocal.length;
+          } else {
+            posicao = fim;
+          }
+        } catch (error) {
+          // Se não conseguir parsear, não é JSON válido ou não é variável local
+          // Continua procurando
+          posicao = fim;
+        }
+      } else {
+        break;
+      }
+    }
+    
+    return textoFormatado;
+  };
+
+  // Função para converter texto de volta ao formato completo ({JSON})
+  // Faz search/replace de [LOCAL: Título] pelo JSON correspondente no mapeamento
+  const converterTextoDeVolta = (textoFormatado) => {
+    if (!textoFormatado) return textoFormatado;
+    
+    // Se o mapeamento estiver vazio, tenta recriá-lo do texto (caso tenha JSON)
+    if (mapeamentoVariaveisLocaisRef.current.size === 0) {
+      if (textoFormatado.includes('"tipo":"variavelLocal"') || textoFormatado.includes('"tipo":variavelLocal')) {
+        // console.log('🔄 Mapeamento vazio, mas texto contém JSON. Recriando mapeamento...');
+        formatarTextoParaExibicao(textoFormatado);
+      } else if (textoFormatado.includes('[LOCAL:')) {
+        // console.error('❌ ERRO: Mapeamento perdido! Texto contém [LOCAL: mas não há JSON correspondente.');
+        return textoFormatado;
+      }
+    }
+    
+    let textoCompleto = textoFormatado;
+    
+    // Substitui cada [LOCAL: Título] pelo JSON correspondente usando o mapeamento
+    // Ordena do mais longo para o mais curto para evitar substituições parciais
+    const mapeamentoArray = Array.from(mapeamentoVariaveisLocaisRef.current.entries())
+      .sort((a, b) => b[0].length - a[0].length);
+    
+    // console.log('🔄 Convertendo texto de volta:');
+    // console.log('   Mapeamento size:', mapeamentoVariaveisLocaisRef.current.size);
+    // console.log('   Texto formatado (primeiros 200 chars):', textoFormatado.substring(0, 200));
+    
+    mapeamentoArray.forEach(([textoFormatadoMapa, jsonString]) => {
+      // Escapa caracteres especiais para regex
+      const textoFormatadoEscapado = textoFormatadoMapa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(textoFormatadoEscapado, 'g');
+      const antes = textoCompleto;
+      textoCompleto = textoCompleto.replace(regex, jsonString);
+      // if (antes !== textoCompleto) {
+      //   console.log('   ✅ Substituído:', textoFormatadoMapa, '→', jsonString.substring(0, 100));
+      // }
+    });
+    
+    // console.log('   Texto completo resultante (primeiros 200 chars):', textoCompleto.substring(0, 200));
+    
+    return textoCompleto;
+  };
 
   // Novos estados para a aba Frases sem Modelo
   const [categoriaSemModelo, setCategoriaSemModelo] = useState('');
@@ -102,7 +272,7 @@ function Frases() {
           setUserId(decoded.user_id);
           setUsername(response.data.email);
         } catch (error) {
-          console.error('Erro ao buscar dados do usuário:', error);
+          // console.error('Erro ao buscar dados do usuário:', error);
         }
       }
     };
@@ -139,7 +309,7 @@ function Frases() {
           setTexto(response.data.texto || '');
         })
         .catch(error => {
-          console.error('Erro ao buscar texto do modelo:', error);
+          // console.error('Erro ao buscar texto do modelo:', error);
         });
     }
 
@@ -159,7 +329,7 @@ function Frases() {
         const response = await api.get('/api/frases/');
         setFrases(response.data);
       } catch (error) {
-        console.error('Erro ao buscar frases:', error);
+        // console.error('Erro ao buscar frases:', error);
       }
     };
 
@@ -225,7 +395,7 @@ function Frases() {
           setCategoriasFiltradasSemModelo([]);
         }
       } catch (error) {
-        console.error('Erro ao buscar categorias sem métodos:', error);
+        // console.error('Erro ao buscar categorias sem métodos:', error);
         setCategoriasFiltradasSemModelo([]);
       }
     };
@@ -266,7 +436,7 @@ function Frases() {
         // Busca o modelo selecionado pelos títulos disponíveis
         const modeloSelecionado = titulosDisponiveis.find(item => item.metodo === newValue[0]);
         if (!modeloSelecionado) {
-          console.error('Modelo não encontrado para o método:', newValue[0]);
+          // console.error('Modelo não encontrado para o método:', newValue[0]);
           return;
         }
 
@@ -288,9 +458,92 @@ function Frases() {
         }
       }
     } catch (error) {
-      console.error('Erro ao buscar categorias:', error);
-      console.error('Detalhes do erro:', error.response?.data);
+      // console.error('Erro ao buscar categorias:', error);
+      // console.error('Detalhes do erro:', error.response?.data);
       setCategoriasFiltradas([]);
+    }
+  };
+
+  // Função auxiliar para atualizar categorias quando há modelo selecionado
+  const atualizarCategoriasComModelo = async () => {
+    if (!modeloId) return;
+    
+    try {
+      const categoriasResponse = await api.get('/api/frases/categorias/', {
+        params: { modelo_laudo_id: modeloId }
+      });
+      
+      if (categoriasResponse.data && Array.isArray(categoriasResponse.data.categorias)) {
+        const categoriasFormatadas = [{
+          group: 'Categorias do Modelo',
+          items: categoriasResponse.data.categorias.map(cat => ({
+            value: cat,
+            label: cat
+          }))
+        }];
+        setCategoriasFiltradas(categoriasFormatadas);
+      }
+    } catch (error) {
+      // console.error('Erro ao atualizar categorias do modelo:', error);
+    }
+  };
+
+  // Função auxiliar para atualizar títulos de uma categoria
+  const atualizarTitulosCategoria = async (categoriaValue) => {
+    if (!categoriaValue) return;
+    
+    try {
+      const response = await api.get('/api/frases/titulos_frases/', {
+        params: { categoria: categoriaValue }
+      });
+      
+      if (response.data && Array.isArray(response.data.titulos_frases)) {
+        setTitulosFiltrados(response.data.titulos_frases);
+      }
+    } catch (error) {
+      // console.error('Erro ao atualizar títulos da categoria:', error);
+    }
+  };
+
+  // Função auxiliar para atualizar categorias sem modelo
+  const atualizarCategoriasSemModelo = async () => {
+    try {
+      const frasesResponse = await api.get('/api/frases/');
+      const frases = frasesResponse.data;
+      
+      const frasesSemModelo = frases.filter(frase => !frase.modelos_laudo || frase.modelos_laudo.length === 0);
+      const categoriasSemModelo = [...new Set(frasesSemModelo.map(frase => frase.categoriaFrase))];
+      
+      if (categoriasSemModelo.length > 0) {
+        setCategoriasFiltradasSemModelo([{
+          group: 'Categorias sem Método',
+          items: categoriasSemModelo.map(cat => ({
+            value: cat,
+            label: cat
+          }))
+        }]);
+      } else {
+        setCategoriasFiltradasSemModelo([]);
+      }
+    } catch (error) {
+      // console.error('Erro ao atualizar categorias sem modelo:', error);
+    }
+  };
+
+  // Função auxiliar para atualizar títulos sem modelo
+  const atualizarTitulosSemModelo = async (categoriaValue) => {
+    if (!categoriaValue) return;
+    
+    try {
+      const response = await api.get('/api/frases/titulos_frases/', {
+        params: { categoria: categoriaValue }
+      });
+      
+      if (response.data && Array.isArray(response.data.titulos_frases)) {
+        setTitulosFiltradosSemModelo(response.data.titulos_frases);
+      }
+    } catch (error) {
+      // console.error('Erro ao atualizar títulos sem modelo:', error);
     }
   };
 
@@ -319,7 +572,7 @@ function Frases() {
       }
       
     } catch (error) {
-      console.error('Erro ao buscar títulos:', error);
+      // console.error('Erro ao buscar títulos:', error);
       setTitulosFiltrados([]);
       setTituloFrase('');
     }
@@ -343,7 +596,9 @@ function Frases() {
         
         // Preenche os campos com os dados da frase
         setFraseId(frase.id);
-        setFraseBase(frase.frase.fraseBase || '');
+        // Formata o texto para exibição (converte variáveis locais)
+        const fraseBaseFormatada = formatarTextoParaExibicao(frase.frase.fraseBase || '');
+        setFraseBase(fraseBaseFormatada);
         setSubstituicaoFraseBase(frase.frase.substituicaoFraseBase || '');
         setSubstituicoesOutras(frase.frase.substituicoesOutras || []);
         setConclusao(frase.frase.conclusao || '');
@@ -354,7 +609,7 @@ function Frases() {
             const modeloResponse = await api.get(`/api/modelos-laudo/${modeloId}/`);
             setTexto(modeloResponse.data.texto || '');
           } catch (error) {
-            console.error('Erro ao buscar modelo:', error);
+            // console.error('Erro ao buscar modelo:', error);
           }
         }
       } else {
@@ -367,7 +622,7 @@ function Frases() {
         setFraseId(null);
       }
     } catch (error) {
-      console.error('Erro ao selecionar título:', error);
+      // console.error('Erro ao selecionar título:', error);
       // Limpa os campos em caso de erro
       setFraseBase('');
       setSubstituicaoFraseBase('');
@@ -399,7 +654,7 @@ function Frases() {
       
       const modeloSelecionado = titulosDisponiveis.find(item => item.titulo === selectedTitulo);
       if (!modeloSelecionado) {
-        console.error('Modelo não encontrado para o título:', selectedTitulo);
+        // console.error('Modelo não encontrado para o título:', selectedTitulo);
         return;
       }
 
@@ -466,11 +721,11 @@ function Frases() {
           
           setCategoriasFiltradas(categoriasFormatadas);
         } else {
-          console.error('Resposta inválida do servidor:', categoriasResponse.data);
+          // console.error('Resposta inválida do servidor:', categoriasResponse.data);
           setCategoriasFiltradas([]);
         }
       } catch (error) {
-        console.error('Erro ao buscar categorias do modelo:', error);
+        // console.error('Erro ao buscar categorias do modelo:', error);
         setCategoriasFiltradas([]);
       }
       
@@ -484,7 +739,7 @@ function Frases() {
       setSubstituicoesOutras([]);
       setConclusao('');
     } catch (error) {
-      console.error('Erro ao buscar modelo completo:', error);
+      // console.error('Erro ao buscar modelo completo:', error);
       alert('Erro ao carregar o modelo. Por favor, tente novamente.');
     }
   };
@@ -505,11 +760,39 @@ function Frases() {
         throw new Error('Token inválido');
       }
 
+      // Converte o texto formatado de volta ao formato completo antes de salvar
+      // console.log('💾 Preparando para salvar frase:');
+      // console.log('   Mapeamento size antes de converter:', mapeamentoVariaveisLocaisRef.current.size);
+      // console.log('   Frase base formatada (textarea):', fraseBase.substring(0, 200));
+      
+      // Se o mapeamento estiver vazio mas o texto contiver [LOCAL:, tenta buscar do backend
+      if (mapeamentoVariaveisLocaisRef.current.size === 0 && fraseBase.includes('[LOCAL:') && fraseId) {
+        // console.log('⚠️ Mapeamento vazio! Tentando buscar frase original do backend...');
+        try {
+          const fraseResponse = await api.get(`/api/frases/${fraseId}/`);
+          const fraseBaseOriginal = fraseResponse.data.frase?.fraseBase || '';
+          if (fraseBaseOriginal) {
+            // Recria o mapeamento usando a frase original
+            formatarTextoParaExibicao(fraseBaseOriginal);
+            // console.log('   ✅ Mapeamento recriado do backend. Size:', mapeamentoVariaveisLocaisRef.current.size);
+          }
+        } catch (error) {
+          // console.error('Erro ao buscar frase original:', error);
+        }
+      }
+      
+      const fraseBaseCompleta = converterTextoDeVolta(fraseBase.trim());
+      
+      // Log do que está sendo salvo
+      // console.log('   Frase base completa (para salvar):', fraseBaseCompleta.substring(0, 200));
+      // console.log('   Contém {JSON} de variável local?', fraseBaseCompleta.includes('"tipo":"variavelLocal"'));
+      // console.log('   Contém [LOCAL:?', fraseBaseCompleta.includes('[LOCAL:'));
+      
       const dadosFrase = {
         categoriaFrase: categoria.trim(),
         tituloFrase: tituloFrase.trim(),
         frase: {
-          fraseBase: fraseBase.trim(),
+          fraseBase: fraseBaseCompleta,
           substituicaoFraseBase: substituicaoFraseBase.trim(),
           substituicoesOutras: substituicoesOutras,
           conclusao: conclusao.trim()
@@ -537,11 +820,21 @@ function Frases() {
         const frasesResponse = await api.get('/api/frases/');
         setFrases(frasesResponse.data);
         
+        // Atualiza os controles (categorias e títulos)
+        if (modeloId) {
+          // Se há modelo selecionado, atualiza categorias do modelo
+          await atualizarCategoriasComModelo();
+          // Se há categoria selecionada, atualiza os títulos dessa categoria
+          if (categoria) {
+            await atualizarTitulosCategoria(categoria);
+          }
+        }
+        
         // Limpa apenas os campos da frase, mantendo o modelo
         handleClear();
       }
     } catch (error) {
-      console.error('Erro ao salvar frase:', error);
+      // console.error('Erro ao salvar frase:', error);
       if (error.message === 'Usuário não autenticado') {
         alert('Sua sessão expirou. Por favor, faça login novamente.');
         handleLogout();
@@ -560,12 +853,15 @@ function Frases() {
 
     try {
       setSaving(true);
+      // Converte o texto formatado de volta ao formato completo antes de salvar
+      const fraseBaseCompleta = converterTextoDeVolta(fraseBase.trim());
+      
       const dadosFrase = {
         metodos: metodosModelo.map(id => parseInt(id)),
         categoriaFrase: categoria.trim(),
         tituloFrase: tituloFrase.trim(),
         frase: {
-          fraseBase: fraseBase.trim(),
+          fraseBase: fraseBaseCompleta,
           substituicaoFraseBase: substituicaoFraseBase.trim(),
           substituicoesOutras: substituicoesOutras,
           conclusao: conclusao.trim()
@@ -583,10 +879,20 @@ function Frases() {
         const frasesResponse = await api.get('/api/frases/');
         setFrases(frasesResponse.data);
         
+        // Atualiza os controles (categorias e títulos)
+        if (modeloId) {
+          // Se há modelo selecionado, atualiza categorias do modelo
+          await atualizarCategoriasComModelo();
+          // Se há categoria selecionada, atualiza os títulos dessa categoria
+          if (categoria) {
+            await atualizarTitulosCategoria(categoria);
+          }
+        }
+        
         alert('Frase atualizada com sucesso!');
       }
     } catch (error) {
-      console.error('Erro ao atualizar frase:', error);
+      // console.error('Erro ao atualizar frase:', error);
       if (error.response?.data) {
         alert(`Erro ao atualizar frase: ${JSON.stringify(error.response.data)}`);
       } else {
@@ -612,12 +918,18 @@ function Frases() {
       const response = await api.get('/api/frases/');
       setFrases(response.data);
       
+      // Atualiza os controles (categorias e títulos)
+      if (modeloId) {
+        // Se há modelo selecionado, atualiza categorias do modelo
+        await atualizarCategoriasComModelo();
+      }
+      
       // Limpa o formulário
       handleClear();
       
       alert('Frase excluída com sucesso!');
     } catch (error) {
-      console.error('Erro ao excluir frase:', error);
+      // console.error('Erro ao excluir frase:', error);
       alert('Erro ao excluir frase. Por favor, tente novamente.');
     } finally {
       setSaving(false);
@@ -714,7 +1026,7 @@ function Frases() {
       const frasesResponse = await api.get('/api/frases/');
       setFrases(frasesResponse.data);
     } catch (error) {
-      console.error('Erro ao atualizar títulos das variáveis:', error);
+      // console.error('Erro ao atualizar títulos das variáveis:', error);
     }
   };
 
@@ -826,11 +1138,39 @@ function Frases() {
         throw new Error('Token inválido');
       }
 
+      // Converte o texto formatado de volta ao formato completo antes de salvar
+      // console.log('💾 Preparando para salvar frase (sem modelo):');
+      // console.log('   Mapeamento size antes de converter:', mapeamentoVariaveisLocaisRef.current.size);
+      // console.log('   Frase base formatada (textarea):', fraseBaseSemModelo.substring(0, 200));
+      
+      // Se o mapeamento estiver vazio mas o texto contiver [LOCAL:, tenta buscar do backend
+      if (mapeamentoVariaveisLocaisRef.current.size === 0 && fraseBaseSemModelo.includes('[LOCAL:') && fraseIdSemModelo) {
+        // console.log('⚠️ Mapeamento vazio! Tentando buscar frase original do backend...');
+        try {
+          const fraseResponse = await api.get(`/api/frases/${fraseIdSemModelo}/`);
+          const fraseBaseOriginal = fraseResponse.data.frase?.fraseBase || '';
+          if (fraseBaseOriginal) {
+            // Recria o mapeamento usando a frase original
+            formatarTextoParaExibicao(fraseBaseOriginal);
+            // console.log('   ✅ Mapeamento recriado do backend. Size:', mapeamentoVariaveisLocaisRef.current.size);
+          }
+        } catch (error) {
+          // console.error('Erro ao buscar frase original:', error);
+        }
+      }
+      
+      const fraseBaseCompleta = converterTextoDeVolta(fraseBaseSemModelo.trim());
+      
+      // Log do que está sendo salvo (sem modelo)
+      // console.log('   Frase base completa (para salvar):', fraseBaseCompleta.substring(0, 200));
+      // console.log('   Contém {JSON} de variável local?', fraseBaseCompleta.includes('"tipo":"variavelLocal"'));
+      // console.log('   Contém [LOCAL:?', fraseBaseCompleta.includes('[LOCAL:'));
+      
       const dadosFrase = {
         categoriaFrase: categoriaSemModelo.trim(),
         tituloFrase: tituloFraseSemModelo.trim(),
         frase: {
-          fraseBase: fraseBaseSemModelo.trim(),
+          fraseBase: fraseBaseCompleta,
           substituicaoFraseBase: substituicaoFraseBaseSemModelo.trim(),
           substituicoesOutras: substituicoesOutrasSemModelo,
           conclusao: conclusaoSemModelo.trim()
@@ -853,11 +1193,18 @@ function Frases() {
         const frasesResponse = await api.get('/api/frases/');
         setFrases(frasesResponse.data);
         
+        // Atualiza os controles (categorias e títulos sem modelo)
+        await atualizarCategoriasSemModelo();
+        // Se há categoria selecionada, atualiza os títulos dessa categoria
+        if (categoriaSemModelo) {
+          await atualizarTitulosSemModelo(categoriaSemModelo);
+        }
+        
         // Limpa os campos
         handleClearSemModelo();
       }
     } catch (error) {
-      console.error('Erro ao salvar frase:', error);
+      // console.error('Erro ao salvar frase:', error);
       if (error.message === 'Usuário não autenticado') {
         alert('Sua sessão expirou. Por favor, faça login novamente.');
         handleLogout();
@@ -877,11 +1224,14 @@ function Frases() {
 
     try {
       setSaving(true);
+      // Converte o texto formatado de volta ao formato completo antes de salvar
+      const fraseBaseCompleta = converterTextoDeVolta(fraseBaseSemModelo.trim());
+      
       const dadosFrase = {
         categoriaFrase: categoriaSemModelo.trim(),
         tituloFrase: tituloFraseSemModelo.trim(),
         frase: {
-          fraseBase: fraseBaseSemModelo.trim(),
+          fraseBase: fraseBaseCompleta,
           substituicaoFraseBase: substituicaoFraseBaseSemModelo.trim(),
           substituicoesOutras: substituicoesOutrasSemModelo,
           conclusao: conclusaoSemModelo.trim()
@@ -895,10 +1245,17 @@ function Frases() {
         const frasesResponse = await api.get('/api/frases/');
         setFrases(frasesResponse.data);
         
+        // Atualiza os controles (categorias e títulos sem modelo)
+        await atualizarCategoriasSemModelo();
+        // Se há categoria selecionada, atualiza os títulos dessa categoria
+        if (categoriaSemModelo) {
+          await atualizarTitulosSemModelo(categoriaSemModelo);
+        }
+        
         alert('Frase atualizada com sucesso!');
       }
     } catch (error) {
-      console.error('Erro ao atualizar frase:', error);
+      // console.error('Erro ao atualizar frase:', error);
       if (error.response?.data) {
         alert(`Erro ao atualizar frase: ${JSON.stringify(error.response.data)}`);
       } else {
@@ -925,12 +1282,15 @@ function Frases() {
       const response = await api.get('/api/frases/');
       setFrases(response.data);
       
+      // Atualiza os controles (categorias sem modelo)
+      await atualizarCategoriasSemModelo();
+      
       // Limpa o formulário
       handleClearSemModelo();
       
       alert('Frase excluída com sucesso!');
     } catch (error) {
-      console.error('Erro ao excluir frase:', error);
+      // console.error('Erro ao excluir frase:', error);
       alert('Erro ao excluir frase. Por favor, tente novamente.');
     } finally {
       setSaving(false);
@@ -961,7 +1321,7 @@ function Frases() {
       }
       
     } catch (error) {
-      console.error('Erro ao buscar títulos:', error);
+      // console.error('Erro ao buscar títulos:', error);
       setTitulosFiltradosSemModelo([]);
       setTituloFraseSemModelo('');
     }
@@ -1015,7 +1375,9 @@ function Frases() {
         // console.log('Frase encontrada:', frase);
         
         setFraseIdSemModelo(frase.id);
-        setFraseBaseSemModelo(frase.frase.fraseBase || '');
+        // Formata o texto para exibição (converte variáveis locais)
+        const fraseBaseFormatada = formatarTextoParaExibicao(frase.frase.fraseBase || '');
+        setFraseBaseSemModelo(fraseBaseFormatada);
         setSubstituicaoFraseBaseSemModelo(frase.frase.substituicaoFraseBase || '');
         setSubstituicoesOutrasSemModelo(frase.frase.substituicoesOutras || []);
         setConclusaoSemModelo(frase.frase.conclusao || '');
@@ -1028,7 +1390,7 @@ function Frases() {
         setFraseIdSemModelo(null);
       }
     } catch (error) {
-      console.error('Erro ao selecionar título:', error);
+      // console.error('Erro ao selecionar título:', error);
       setFraseBaseSemModelo('');
       setSubstituicaoFraseBaseSemModelo('');
       setSubstituicoesOutrasSemModelo([]);
@@ -1063,8 +1425,288 @@ function Frases() {
     localStorage.removeItem('variavelHandler');
   };
 
+  // Funções para gerenciar variável local completa (novo formato)
+  const handleAdicionarValorLocal = () => {
+    if (!variavelLocalDescricao.trim() || !variavelLocalValor.trim()) return;
+
+    const novoValor = {
+      descricao: variavelLocalDescricao,
+      valor: variavelLocalValor
+    };
+
+    setVariavelLocalValores([...variavelLocalValores, novoValor]);
+    
+    // Limpa os campos após adicionar
+    setVariavelLocalDescricao('');
+    setVariavelLocalValor('');
+  };
+
+  const handleEditarValorLocal = (index) => {
+    const valor = variavelLocalValores[index];
+    setVariavelLocalDescricao(valor.descricao);
+    setVariavelLocalValor(valor.valor);
+    
+    // Remove o valor atual
+    setVariavelLocalValores(variavelLocalValores.filter((_, i) => i !== index));
+  };
+
+  const handleDeletarValorLocal = (index) => {
+    if (window.confirm('Tem certeza que deseja excluir este valor?')) {
+      setVariavelLocalValores(variavelLocalValores.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleClearVariavelLocal = () => {
+    setVariavelLocalTipoControle('');
+    setVariavelLocalTitulo('');
+    setVariavelLocalLabel('');
+    setVariavelLocalDescricao('');
+    setVariavelLocalValor('');
+    setVariavelLocalValores([]);
+    setVariavelLocalDelimitador('');
+    setVariavelLocalUltimoDelimitador('');
+    setEditandoVariavelLocal(false);
+    setVariavelLocalTextoOriginal('');
+    // Mantém opcoesVariavelLocal para compatibilidade com formato antigo
+  };
+
+  // Função para extrair dados de uma variável local formatada
+  const extrairDadosVariavelLocal = (textoFormatado) => {
+    // Regex para encontrar [LOCAL: Título]
+    const regexFormatado = /\[LOCAL: ([^\]]+)\]/;
+    const match = textoFormatado.match(regexFormatado);
+    
+    if (!match) return null;
+    
+    // Busca no mapeamento o texto completo correspondente (JSON)
+    const textoCompleto = mapeamentoVariaveisLocaisRef.current.get(textoFormatado);
+    
+    if (!textoCompleto) {
+      // Se não encontrar no mapeamento, tenta buscar no texto completo do textarea
+      // Isso pode acontecer se o mapeamento foi perdido
+      return null;
+    }
+    
+    // O texto completo agora é diretamente o JSON {JSON}
+    try {
+      // Tenta parsear o JSON diretamente
+      let jsonParaParsear = textoCompleto;
+      // Se o JSON não tiver aspas no valor de tipo, adiciona
+      if (textoCompleto.includes('"tipo":variavelLocal')) {
+        jsonParaParsear = textoCompleto.replace(/"tipo":variavelLocal/g, '"tipo":"variavelLocal"');
+      }
+      
+      const estruturaVariavel = JSON.parse(jsonParaParsear);
+      
+      return {
+        tipo: estruturaVariavel.controle || estruturaVariavel.tipoControle,
+        estruturaVariavel,
+        textoCompleto,
+        textoFormatado
+      };
+    } catch (error) {
+      // console.error('Erro ao extrair dados da variável local:', error);
+      return null;
+    }
+  };
+
+  // Função para editar variável local selecionada
+  const handleEditarVariavelLocalSelecionada = () => {
+    const handler = localStorage.getItem('variavelHandler');
+    let textareaElement;
+    let textoAtual;
+    
+    if (handler === 'semModelo') {
+      textareaElement = document.querySelector('textarea[name="fraseBaseSemModelo"]');
+      textoAtual = fraseBaseSemModelo;
+    } else {
+      textareaElement = document.querySelector('textarea[name="fraseBaseComModelo"]');
+      textoAtual = fraseBase;
+    }
+    
+    if (!textareaElement) {
+      alert('Não foi possível encontrar o campo de texto.');
+      return;
+    }
+    
+    const start = textareaElement.selectionStart;
+    const end = textareaElement.selectionEnd;
+    
+    if (start === end) {
+      alert('Por favor, selecione uma variável local para editar (texto no formato [LOCAL: Título]).');
+      return;
+    }
+    
+    // Obtém o texto selecionado
+    const textoSelecionado = textoAtual.substring(start, end).trim();
+    
+    // Tenta extrair dados da variável local
+    // Primeiro, precisamos garantir que o mapeamento está atualizado
+    // Recriamos o mapeamento formatando o texto atual
+    const textoAtualCompleto = converterTextoDeVolta(textoAtual);
+    formatarTextoParaExibicao(textoAtualCompleto);
+    
+    // Agora tenta extrair novamente
+    const dados = extrairDadosVariavelLocal(textoSelecionado);
+    
+    if (!dados) {
+      alert('O texto selecionado não é uma variável local válida. Por favor, selecione uma variável local no formato [LOCAL: Título].');
+      return;
+    }
+    
+    // Preenche o modal com os dados extraídos
+    setVariavelLocalTipoControle(dados.estruturaVariavel.controle || dados.tipo || '');
+    setVariavelLocalTitulo(dados.estruturaVariavel.titulo || '');
+    setVariavelLocalLabel(dados.estruturaVariavel.label || '');
+    setVariavelLocalValores(dados.estruturaVariavel.valores || []);
+    setVariavelLocalDelimitador(dados.estruturaVariavel.delimitador || '');
+    setVariavelLocalUltimoDelimitador(dados.estruturaVariavel.ultimoDelimitador || '');
+    
+    // Marca que estamos editando
+    setEditandoVariavelLocal(true);
+    setVariavelLocalTextoOriginal(textoSelecionado);
+    
+    // Abre o modal
+    setModalVariavelLocalAberto(true);
+  };
+
+  // Função para formatar e inserir variável local completa
+  const handleAdicionarVariavelLocalCompleta = () => {
+    if (!variavelLocalTitulo.trim() || !variavelLocalTipoControle || variavelLocalValores.length === 0) {
+      alert('Por favor, preencha todos os campos obrigatórios (Título, Tipo de Controle e adicione pelo menos um valor).');
+      return;
+    }
+
+    // Monta a estrutura da variável local
+    const estruturaVariavel = {
+      tipo: 'variavelLocal',
+      controle: variavelLocalTipoControle, // "Combobox", "Grupo de Radio", etc.
+      titulo: variavelLocalTitulo, // Título é obrigatório
+      valores: variavelLocalValores,
+      ...(variavelLocalLabel ? { label: variavelLocalLabel } : {}),
+      ...(variavelLocalTipoControle === "Grupo de Checkbox" || variavelLocalTipoControle === "Combobox com múltiplas opções" ? {
+        delimitador: variavelLocalDelimitador,
+        ultimoDelimitador: variavelLocalUltimoDelimitador
+      } : {})
+    };
+
+    // Log do JSON completo da variável local
+    // console.log('📋 JSON completo da variável local:');
+    // console.log('   Estrutura:', estruturaVariavel);
+    const jsonString = JSON.stringify(estruturaVariavel);
+    // console.log('   JSON stringificado:', jsonString);
+
+    // Cria o texto formatado para exibição
+    const tituloFormatado = estruturaVariavel.label || estruturaVariavel.titulo || 'Variável Local';
+    const variavelFormatadaParaExibicao = `[LOCAL: ${tituloFormatado}]`;
+    
+    // Guarda o mapeamento: [LOCAL: Título] → {JSON}
+    mapeamentoVariaveisLocaisRef.current.set(variavelFormatadaParaExibicao, jsonString);
+    // console.log('📝 Mapeamento guardado:', variavelFormatadaParaExibicao, '→', jsonString.substring(0, 100));
+
+    const handler = localStorage.getItem('variavelHandler');
+    let textareaElement;
+    
+    // Se estamos editando, substitui a variável antiga
+    if (editandoVariavelLocal && variavelLocalTextoOriginal) {
+      if (handler === 'semModelo') {
+        textareaElement = document.querySelector('textarea[name="fraseBaseSemModelo"]');
+        if (textareaElement) {
+          const textoAtual = fraseBaseSemModelo;
+          // Remove o mapeamento antigo
+          mapeamentoVariaveisLocaisRef.current.delete(variavelLocalTextoOriginal);
+          // Substitui o texto formatado antigo pelo novo
+          const novoTexto = textoAtual.replace(variavelLocalTextoOriginal, variavelFormatadaParaExibicao);
+          setFraseBaseSemModelo(novoTexto);
+        }
+      } else {
+        textareaElement = document.querySelector('textarea[name="fraseBaseComModelo"]');
+        if (textareaElement) {
+          const textoAtual = fraseBase;
+          // Remove o mapeamento antigo
+          mapeamentoVariaveisLocaisRef.current.delete(variavelLocalTextoOriginal);
+          // Substitui o texto formatado antigo pelo novo
+          const novoTexto = textoAtual.replace(variavelLocalTextoOriginal, variavelFormatadaParaExibicao);
+          setFraseBase(novoTexto);
+        }
+      }
+      
+      // Reseta o estado de edição
+      setEditandoVariavelLocal(false);
+      setVariavelLocalTextoOriginal('');
+      
+      // Fecha o modal e limpa os campos
+      setModalVariavelLocalAberto(false);
+      handleClearVariavelLocal();
+      localStorage.removeItem('variavelHandler');
+      return;
+    }
+    
+    // Se não está editando, insere nova variável
+    if (handler === 'semModelo') {
+      textareaElement = document.querySelector('textarea[name="fraseBaseSemModelo"]');
+      if (textareaElement) {
+        const start = textareaElement.selectionStart;
+        const end = textareaElement.selectionEnd;
+        const textoAtual = fraseBaseSemModelo;
+        // Insere o texto formatado diretamente no textarea
+        const novoTexto = textoAtual.substring(0, start) + variavelFormatadaParaExibicao + textoAtual.substring(end);
+        setFraseBaseSemModelo(novoTexto);
+        
+        // Calcula a posição do cursor
+        const novaPosicaoCursor = start + variavelFormatadaParaExibicao.length;
+        
+        setTimeout(() => {
+          textareaElement.focus();
+          textareaElement.setSelectionRange(novaPosicaoCursor, novaPosicaoCursor);
+        }, 0);
+      } else {
+        // Se não encontrar o textarea, adiciona ao final
+        setFraseBaseSemModelo(prev => prev + (prev ? ' ' : '') + variavelFormatadaParaExibicao);
+      }
+    } else {
+      textareaElement = document.querySelector('textarea[name="fraseBaseComModelo"]');
+      if (textareaElement) {
+        const start = textareaElement.selectionStart;
+        const end = textareaElement.selectionEnd;
+        const textoAtual = fraseBase;
+        // Insere o texto formatado diretamente no textarea
+        const novoTexto = textoAtual.substring(0, start) + variavelFormatadaParaExibicao + textoAtual.substring(end);
+        setFraseBase(novoTexto);
+        
+        // Calcula a posição do cursor
+        const novaPosicaoCursor = start + variavelFormatadaParaExibicao.length;
+        
+        setTimeout(() => {
+          textareaElement.focus();
+          textareaElement.setSelectionRange(novaPosicaoCursor, novaPosicaoCursor);
+        }, 0);
+      } else {
+        // Se não encontrar o textarea, adiciona ao final
+        setFraseBase(prev => prev + (prev ? ' ' : '') + variavelFormatadaParaExibicao);
+      }
+    }
+    
+    // Fecha o modal e limpa os campos
+    setModalVariavelLocalAberto(false);
+    handleClearVariavelLocal();
+    setOpcoesVariavelLocal(''); // Limpa também o campo antigo
+    localStorage.removeItem('variavelHandler');
+  };
+
+  // Função para compatibilidade com formato antigo [opcao1//opcao2]
   const handleAdicionarVariavelLocal = () => {
-    if (!opcoesVariavelLocal.trim()) return;
+    // Se tem valores completos no formato novo, usa o formato novo
+    if (variavelLocalTipoControle && variavelLocalValores.length > 0 && variavelLocalTitulo.trim()) {
+      handleAdicionarVariavelLocalCompleta();
+      return;
+    }
+
+    // Caso contrário, usa formato antigo
+    if (!opcoesVariavelLocal.trim()) {
+      alert('Por favor, preencha o formato novo ou o formato antigo.');
+      return;
+    }
 
     // Divide as linhas e remove linhas vazias
     const opcoes = opcoesVariavelLocal
@@ -1089,7 +1731,6 @@ function Frases() {
         const novoTexto = textoAtual.substring(0, start) + variavelFormatada + textoAtual.substring(end);
         setFraseBaseSemModelo(novoTexto);
         
-        // Foca no textarea e posiciona o cursor após a variável inserida
         setTimeout(() => {
           textareaElement.focus();
           textareaElement.setSelectionRange(start + variavelFormatada.length, start + variavelFormatada.length);
@@ -1106,7 +1747,6 @@ function Frases() {
         const novoTexto = textoAtual.substring(0, start) + variavelFormatada + textoAtual.substring(end);
         setFraseBase(novoTexto);
         
-        // Foca no textarea e posiciona o cursor após a variável inserida
         setTimeout(() => {
           textareaElement.focus();
           textareaElement.setSelectionRange(start + variavelFormatada.length, start + variavelFormatada.length);
@@ -1230,7 +1870,12 @@ function Frases() {
                       name="fraseBaseComModelo"
                       placeholder="Digite a frase base"                
                       value={fraseBase}
-                      onChange={(event) => setFraseBase(event.currentTarget.value)}
+                      onChange={(event) => {
+                        const novoValor = event.currentTarget.value;
+                        // Converte de volta ao formatar antes de atualizar o estado
+                        // Mas na verdade, mantemos formatado no estado e só convertemos ao salvar
+                        setFraseBase(novoValor);
+                      }}
                       minRows={3}
                       autosize
                       maxRows={10}
@@ -1291,6 +1936,19 @@ function Frases() {
                       }}
                     >
                       Inserir Variável Local
+                    </Button>
+                  </Tooltip>
+                  <Tooltip label="Edita a variável local selecionada no campo de texto. Selecione o texto [LOCAL: Título] antes de clicar.">
+                    <Button 
+                      variant="light" 
+                      color="orange"
+                      leftSection={<IconEdit size={20} />}
+                      onClick={() => {
+                        localStorage.setItem('variavelHandler', 'comModelo');
+                        handleEditarVariavelLocalSelecionada();
+                      }}
+                    >
+                      Editar Variável Local Selecionada
                     </Button>
                   </Tooltip>
                 </Group>
@@ -1576,6 +2234,19 @@ function Frases() {
                       Inserir Variável Local
                     </Button>
                   </Tooltip>
+                  <Tooltip label="Edita a variável local selecionada no campo de texto. Selecione o texto [LOCAL: Título] antes de clicar.">
+                    <Button 
+                      variant="light" 
+                      color="orange"
+                      leftSection={<IconEdit size={20} />}
+                      onClick={() => {
+                        localStorage.setItem('variavelHandler', 'semModelo');
+                        handleEditarVariavelLocalSelecionada();
+                      }}
+                    >
+                      Editar Variável Local Selecionada
+                    </Button>
+                  </Tooltip>
                 </Group>
 
                 <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
@@ -1762,44 +2433,249 @@ function Frases() {
         opened={modalVariavelLocalAberto}
         onClose={() => {
           setModalVariavelLocalAberto(false);
+          handleClearVariavelLocal();
           setOpcoesVariavelLocal('');
           localStorage.removeItem('variavelHandler');
         }}
-        title="Criar Variável Local"
-        size="md"
+        title={editandoVariavelLocal ? "Editar Variável Local" : "Criar Variável Local"}
+        size="lg"
+        styles={{
+          body: {
+            maxHeight: 'calc(90vh - 100px)',
+            overflowY: 'auto'
+          }
+        }}
       >
         <Stack spacing="md">
+          <Divider label="Formato Novo (Recomendado)" labelPosition="center" my="md" />
+          
+          <Select
+            label="Tipos de controle"
+            placeholder="Selecione o tipo de controle"
+            data={['Combobox', 'Grupo de Radio', 'Grupo de Checkbox', 'Combobox com múltiplas opções']}
+            value={variavelLocalTipoControle}
+            onChange={setVariavelLocalTipoControle}
+            required
+          />
+
+          {variavelLocalTipoControle && (
+            <>
+              <TextInput
+                label="Título"
+                placeholder="Digite o título do controle"
+                value={variavelLocalTitulo}
+                onChange={(event) => setVariavelLocalTitulo(event.currentTarget.value)}
+                required
+              />
+
+              <TextInput
+                label="Label"
+                placeholder="Digite o label que aparecerá no modal (opcional)"
+                value={variavelLocalLabel}
+                onChange={(event) => setVariavelLocalLabel(event.currentTarget.value)}
+                description="Se não preenchido, será usado o título"
+              />
+
+              <Group grow>
+                <TextInput
+                  label="Descrição"
+                  placeholder="Digite a descrição"
+                  value={variavelLocalDescricao}
+                  onChange={(event) => {
+                    const novoValor = event.currentTarget.value;
+                    setVariavelLocalDescricao(novoValor);
+                    setVariavelLocalValor(novoValor);
+                  }}
+                />
+                <TextInput
+                  label="Valor"
+                  placeholder="Digite o valor"
+                  value={variavelLocalValor}
+                  onChange={(event) => setVariavelLocalValor(event.currentTarget.value)}
+                />
+              </Group>
+
+              <Group justify="flex-end" mt="md">
+                <Button 
+                  color="blue" 
+                  onClick={handleAdicionarValorLocal}
+                  leftSection={<IconDeviceFloppy size={20} />}
+                  disabled={!variavelLocalDescricao.trim() || !variavelLocalValor.trim()}
+                >
+                  Adicionar Valores
+                </Button>
+              </Group>
+
+              {(variavelLocalTipoControle === "Grupo de Checkbox" || variavelLocalTipoControle === "Combobox com múltiplas opções") && (
+                <Group grow>
+                  <TextInput
+                    label={
+                      <Group gap="xs">
+                        <Text>Delimitador</Text>
+                        <Tooltip
+                          label="Digite um caractere que será usado para separar os valores selecionados. Por exemplo: usando ',' os valores serão separados por vírgula."
+                          position="top"
+                          withArrow
+                          multiline
+                          w={220}
+                        >
+                          <IconHelp size={16} style={{ cursor: 'help' }} />
+                        </Tooltip>
+                      </Group>
+                    }
+                    placeholder="Digite um delimitador para separar os valores, por exemplo: ',' ';' '/' '.', ou qualquer outro caractere."
+                    value={variavelLocalDelimitador}
+                    onChange={(event) => setVariavelLocalDelimitador(event.currentTarget.value)}
+                  />
+                  <TextInput
+                    label={
+                      <Group gap="xs">
+                        <Text>Último delimitador</Text>
+                        <Tooltip
+                          label="Digite o caractere que será usado antes do último valor. Por exemplo: usando 'e' o resultado será 'valor1, valor2 e valor3'. Use 'ENTER' para adicionar uma quebra de linha."
+                          position="top"
+                          withArrow
+                          multiline
+                          w={220}
+                        >
+                          <IconHelp size={16} style={{ cursor: 'help' }} />
+                        </Tooltip>
+                      </Group>
+                    }
+                    placeholder="Digite o último delimitador, por exemplo: ',' ';' '/' '.', ou qualquer outro caractere. Digite 'ENTER' para acrescentar uma nova linha."
+                    value={variavelLocalUltimoDelimitador}
+                    onChange={(event) => setVariavelLocalUltimoDelimitador(event.currentTarget.value)}
+                  />
+                </Group>
+              )}
+
+              {/* Lista de valores */}
+              {variavelLocalValores.length > 0 && (
+                <Stack spacing="xs" mt="md">
+                  <Text size="sm" fw={500}>Valores adicionados:</Text>
+                  <DragDropContext onDragEnd={(result) => {
+                    if (!result.destination) return;
+                    
+                    const items = Array.from(variavelLocalValores);
+                    const [reorderedItem] = items.splice(result.source.index, 1);
+                    items.splice(result.destination.index, 0, reorderedItem);
+                    
+                    setVariavelLocalValores(items);
+                  }}>
+                    <Droppable droppableId="valores-local">
+                      {(provided) => (
+                        <div
+                          {...provided.droppableProps}
+                          ref={provided.innerRef}
+                          style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                        >
+                          {variavelLocalValores.map((valor, index) => (
+                            <Draggable key={index} draggableId={`valor-local-${index}`} index={index}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  style={{
+                                    ...provided.draggableProps.style,
+                                    padding: '8px',
+                                    backgroundColor: snapshot.isDragging ? '#e9ecef' : '#f8f9fa',
+                                    borderRadius: '4px',
+                                    border: '1px solid #dee2e6',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  <div {...provided.dragHandleProps} style={{ cursor: 'grab' }}>
+                                    <IconGripVertical size={16} color="#6c757d" />
+                                  </div>
+                                  <Stack spacing="xs" style={{ flex: 1 }}>
+                                    <Text size="sm">
+                                      <strong>Descrição:</strong> {valor.descricao}
+                                    </Text>
+                                    <Text size="sm">
+                                      <strong>Valor:</strong> {valor.valor}
+                                    </Text>
+                                  </Stack>
+                                  <Group gap="xs">
+                                    <Button
+                                      variant="subtle"
+                                      color="blue"
+                                      size="xs"
+                                      onClick={() => handleEditarValorLocal(index)}
+                                      leftSection={<IconEdit size={14} />}
+                                    >
+                                      Editar
+                                    </Button>
+                                    <Button
+                                      variant="subtle"
+                                      color="red"
+                                      size="xs"
+                                      onClick={() => handleDeletarValorLocal(index)}
+                                      leftSection={<IconTrash size={14} />}
+                                    >
+                                      Excluir
+                                    </Button>
+                                  </Group>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </DragDropContext>
+                </Stack>
+              )}
+
+              <Group justify="flex-end" mt="md">
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setModalVariavelLocalAberto(false);
+                    handleClearVariavelLocal();
+                    setOpcoesVariavelLocal('');
+                    localStorage.removeItem('variavelHandler');
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  color="blue" 
+                  onClick={handleAdicionarVariavelLocalCompleta}
+                  leftSection={<IconDeviceFloppy size={20} />}
+                  disabled={!variavelLocalTitulo.trim() || !variavelLocalTipoControle || variavelLocalValores.length === 0}
+                >
+                  {editandoVariavelLocal ? 'Salvar Alterações' : 'Adicionar Variável Local'}
+                </Button>
+              </Group>
+            </>
+          )}
+
+          <Divider label="Formato Antigo (Compatibilidade)" labelPosition="center" my="md" />
+          
           <Text size="sm" c="dimmed">
             Digite as opções da variável local, uma por linha. Elas serão inseridas no formato [opcao1//opcao2//opcao3].
           </Text>
           
           <Textarea
-            label="Opções da Variável Local"
+            label="Opções da Variável Local (Formato Antigo)"
             placeholder="Digite uma opção por linha&#10;Exemplo:&#10;Opção 1&#10;Opção 2&#10;Opção 3"
             value={opcoesVariavelLocal}
             onChange={(event) => setOpcoesVariavelLocal(event.currentTarget.value)}
-            minRows={5}
+            minRows={3}
             autosize
             maxRows={10}
           />
           
           <Group justify="flex-end">
             <Button 
-              variant="outline" 
-              onClick={() => {
-                setModalVariavelLocalAberto(false);
-                setOpcoesVariavelLocal('');
-                localStorage.removeItem('variavelHandler');
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button 
               color="blue"
               onClick={handleAdicionarVariavelLocal}
-              disabled={!opcoesVariavelLocal.trim()}
+              disabled={!opcoesVariavelLocal.trim() && (!variavelLocalTipoControle || variavelLocalValores.length === 0)}
             >
-              Adicionar
+              {variavelLocalTipoControle && variavelLocalValores.length > 0 ? 'Adicionar (Novo Formato)' : 'Adicionar (Formato Antigo)'}
             </Button>
           </Group>
         </Stack>

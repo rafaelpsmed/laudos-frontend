@@ -23,7 +23,7 @@ api.interceptors.request.use(
         return config;
     },
     (error) => {
-        console.error('Request error:', error); // Log para debug
+        // console.error('Request error:', error); // Log para debug
         return Promise.reject(error);
     }
 );
@@ -35,7 +35,7 @@ api.interceptors.response.use(
         return response;
     },
     async (error) => {
-        console.error('Response error:', error); // Log para debug
+        // console.error('Response error:', error); // Log para debug
         const originalRequest = error.config;
 
         // Se o erro for 401 e não for uma tentativa de refresh
@@ -61,7 +61,7 @@ api.interceptors.response.use(
 
                 return api(originalRequest);
             } catch (refreshError) {
-                console.error('Erro ao atualizar token:', refreshError);
+                // console.error('Erro ao atualizar token:', refreshError);
                 localStorage.removeItem(ACCESS_TOKEN);
                 localStorage.removeItem(REFRESH_TOKEN);
                 window.location.href = '/login';

@@ -6,7 +6,8 @@ import ComboboxAutocomplete from './componentesVariaveisModal/ComboboxAutocomple
 function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, elementosOrdenados, onConfirm, tituloFrase, temMedida }) {
   const [valoresSelecionados, setValoresSelecionados] = useState({});
   const [variaveisDetalhes, setVariaveisDetalhes] = useState([]);
-  const [medida, setMedida] = useState('');
+  // Uma medida por ocorrência de '$' no texto
+  const [medidas, setMedidas] = useState([]);
   const [opcoesRadio, setOpcoesRadio] = useState({});
   const [variaveisPorInstancia, setVariaveisPorInstancia] = useState({}); // Estado para controlar cada instância separadamente
   const [contagemVariaveis, setContagemVariaveis] = useState({}); // Para contar ocorrências de cada variável
@@ -35,6 +36,13 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
       console.error('Erro ao carregar escolhas:', error);
       return {};
     }
+  };
+
+  const quantidadeMedidasNoTexto = (elementosOrdenados || []).filter(e => e.tipo === 'medida').length;
+
+  // Função auxiliar para obter o label de exibição da variável
+  const getLabelDisplay = (variavel) => {
+    return variavel?.variavel?.label || variavel?.tituloVariavel || '';
   };
 
   useEffect(() => {
@@ -108,6 +116,28 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
           }
         });
 
+        // Inicializa valores para variáveis locais também
+        elementosOrdenados.forEach(elemento => {
+          if (elemento.tipo === 'variavelLocal') {
+            const textoOriginal = elemento.dados.textoOriginal;
+            const estruturaVariavel = elemento.dados.variavel;
+
+            if (escolhasSalvas[textoOriginal] !== undefined) {
+              const tipoControle = estruturaVariavel.controle || estruturaVariavel.tipo;
+              if (tipoControle === "Grupo de Checkbox" || tipoControle === "Combobox com múltiplas opções") {
+                valoresIniciais[textoOriginal] = Array.isArray(escolhasSalvas[textoOriginal])
+                  ? escolhasSalvas[textoOriginal]
+                  : [];
+              } else {
+                valoresIniciais[textoOriginal] = escolhasSalvas[textoOriginal];
+              }
+            } else {
+              const tipoControle = estruturaVariavel.controle || estruturaVariavel.tipo;
+              valoresIniciais[textoOriginal] = tipoControle?.includes('múltiplas') ? [] : '';
+            }
+          }
+        });
+
         setValoresSelecionados(valoresIniciais);
         setVariaveisPorInstancia(variaveisInstanciaIniciais);
       } catch (error) {
@@ -115,8 +145,45 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
       }
     };
 
-    if (opened && variaveis.length > 0) {
-      buscarDetalhesVariaveis();
+    const inicializarVariaveisLocais = () => {
+      const escolhasSalvas = carregarEscolhas();
+      const valoresLocaisIniciais = {};
+
+      // Inicializa valores para variáveis locais
+      elementosOrdenados.forEach(elemento => {
+        if (elemento.tipo === 'variavelLocal') {
+          const textoOriginal = elemento.dados.textoOriginal;
+          const estruturaVariavel = elemento.dados.variavel;
+
+          if (escolhasSalvas[textoOriginal] !== undefined) {
+            const tipoControle = estruturaVariavel.controle || estruturaVariavel.tipo;
+            if (tipoControle === "Grupo de Checkbox" || tipoControle === "Combobox com múltiplas opções") {
+              valoresLocaisIniciais[textoOriginal] = Array.isArray(escolhasSalvas[textoOriginal])
+                ? escolhasSalvas[textoOriginal]
+                : [];
+            } else {
+              valoresLocaisIniciais[textoOriginal] = escolhasSalvas[textoOriginal];
+            }
+          } else {
+            const tipoControle = estruturaVariavel.controle || estruturaVariavel.tipo;
+            valoresLocaisIniciais[textoOriginal] = tipoControle?.includes('múltiplas') ? [] : '';
+          }
+        }
+      });
+
+      setValoresSelecionados(prev => ({
+        ...prev,
+        ...valoresLocaisIniciais
+      }));
+    };
+
+    if (opened) {
+      if (variaveis.length > 0) {
+        buscarDetalhesVariaveis();
+      } else {
+        // Se não há variáveis globais, inicializa apenas variáveis locais
+        inicializarVariaveisLocais();
+      }
     }
   }, [opened, variaveis, elementosOrdenados]);
 
@@ -130,8 +197,32 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
         });
         setOpcoesRadio(estadosIniciais);
       }
+
+      // Inicializa medidas (uma por '$') com base no cache do localStorage
+      if (temMedida && quantidadeMedidasNoTexto > 0) {
+        const escolhasSalvas = carregarEscolhas();
+        const salvo = escolhasSalvas?.['$'];
+        const arrSalvo = Array.isArray(salvo) ? salvo : (typeof salvo === 'string' ? [salvo] : []);
+        const medidasIniciais = Array.from({ length: quantidadeMedidasNoTexto }, (_, i) => arrSalvo[i] ?? '');
+        setMedidas(medidasIniciais);
+      } else {
+        setMedidas([]);
+      }
     }
-  }, [opened, gruposOpcoes]);
+  }, [opened, gruposOpcoes, temMedida, quantidadeMedidasNoTexto]);
+
+  const handleMedidaChange = (indice, valor) => {
+    const novas = [...(medidas || [])];
+    novas[indice] = valor;
+    setMedidas(novas);
+
+    // Persiste junto com as demais escolhas já salvas
+    const escolhasSalvas = carregarEscolhas();
+    salvarEscolhas({
+      ...escolhasSalvas,
+      '$': novas
+    });
+  };
 
   const handleChange = (variavelId, valor) => {
     // Verifica se o valor selecionado contém referências
@@ -156,7 +247,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
           [variavelId]: valor
         };
         setValoresSelecionados(novosValores);
-        salvarEscolhas(novosValores);
+        const escolhasSalvas = carregarEscolhas();
+        salvarEscolhas({ ...escolhasSalvas, ...novosValores });
       }
     } else {
       // Não tem referência, salva normalmente
@@ -165,7 +257,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
         [variavelId]: valor
       };
       setValoresSelecionados(novosValores);
-      salvarEscolhas(novosValores);
+      const escolhasSalvas = carregarEscolhas();
+      salvarEscolhas({ ...escolhasSalvas, ...novosValores });
     }
   };
 
@@ -221,6 +314,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   // Função auxiliar para renderizar controles de variável por instância
   const renderControleInstancia = (variavel, instanciaId, tituloBase) => {
     const tipo = variavel.variavel.tipo;
+    const labelDisplay = getLabelDisplay(variavel);
 
     // Renderiza valores originais (sem expansão)
     const valores = variavel.variavel.valores.map(v => ({
@@ -233,7 +327,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     if (tipo === "Combobox") {
       return (
         <ComboboxAutocomplete
-          label={`${tituloBase} (instância ${instanciaId.split('_')[1]})`}
+          label={`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}
           placeholder="Selecione um valor"
           data={valores}
           value={value}
@@ -243,7 +337,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Radio") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{`${tituloBase} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
           <Radio.Group
             value={value}
             onChange={(value) => handleChange(instanciaId, value)}
@@ -263,7 +357,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Checkbox") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{`${tituloBase} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
           <Checkbox.Group
             value={Array.isArray(value) ? value : []}
             onChange={(value) => handleChange(instanciaId, value)}
@@ -283,7 +377,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Combobox com múltiplas opções") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{`${tituloBase} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
           <MultiSelect
             label=""
             placeholder="Selecione os valores"
@@ -387,8 +481,10 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     });
 
     // Adiciona a medida ao resultado se existir
-    if (temMedida && medida.trim()) {
-      resultado['$'] = medida.trim();
+    if (temMedida && quantidadeMedidasNoTexto > 0) {
+      const medidasTrim = (medidas || []).map(m => (typeof m === 'string' ? m.trim() : String(m ?? '').trim()));
+      // Mantém compatibilidade: 1 medida -> string, múltiplas -> array
+      resultado['$'] = quantidadeMedidasNoTexto === 1 ? (medidasTrim[0] ?? '') : medidasTrim;
     }
 
     // Adiciona as opções selecionadas dos grupos de radio
@@ -397,6 +493,41 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
         resultado[grupo.textoOriginal] = opcoesRadio[`grupo_${index}`] || grupo.opcoes[0];
       });
     }
+
+    // Processa variáveis locais
+    elementosOrdenados.forEach(elemento => {
+      if (elemento.tipo === 'variavelLocal') {
+        const variavelLocal = elemento.dados;
+        const textoOriginal = variavelLocal.textoOriginal;
+        const valorSelecionado = valoresSelecionados[textoOriginal];
+
+        const tipoControle = variavelLocal.variavel.controle || variavelLocal.variavel.tipo;
+        if (tipoControle === "Grupo de Checkbox" || tipoControle === "Combobox com múltiplas opções") {
+          const valores = Array.isArray(valorSelecionado) ? valorSelecionado : [];
+          const valoresTexto = valores.map(val => {
+            const valorEncontrado = variavelLocal.variavel.valores.find(v => v.valor === val);
+            return valorEncontrado ? valorEncontrado.valor : val;
+          });
+
+          if (valoresTexto.length > 0) {
+            const delimitador = variavelLocal.variavel.delimitador || ', ';
+            const ultimoDelimitador = variavelLocal.variavel.ultimoDelimitador || ' e ';
+
+            if (valoresTexto.length === 1) {
+              resultado[textoOriginal] = valoresTexto[0];
+            } else {
+              const ultimoValor = valoresTexto.pop();
+              resultado[textoOriginal] = valoresTexto.join(delimitador) + ultimoDelimitador + ultimoValor;
+            }
+          } else {
+            resultado[textoOriginal] = '';
+          }
+        } else {
+          const valorEncontrado = variavelLocal.variavel.valores.find(v => v.valor === valorSelecionado);
+          resultado[textoOriginal] = valorEncontrado ? valorEncontrado.valor : (valorSelecionado || '');
+        }
+      }
+    });
 
     onConfirm(resultado);
     onClose();
@@ -434,7 +565,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
       [variavelIdOrigem]: valorResolvido
     };
     setValoresSelecionados(novosValores);
-    salvarEscolhas(novosValores);
+    const escolhasSalvas = carregarEscolhas();
+    salvarEscolhas({ ...escolhasSalvas, ...novosValores });
     
     // Fecha o modal de referência
     setModalReferenciaAberto(false);
@@ -523,8 +655,9 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     });
     
     // Adiciona a medida ao resultado se existir
-    if (temMedida && medida.trim()) {
-      resultado['$'] = medida.trim();
+    if (temMedida && quantidadeMedidasNoTexto > 0) {
+      const medidasTrim = (medidas || []).map(m => (typeof m === 'string' ? m.trim() : String(m ?? '').trim()));
+      resultado['$'] = quantidadeMedidasNoTexto === 1 ? (medidasTrim[0] ?? '') : medidasTrim;
     }
     
     // Adiciona as opções selecionadas dos grupos de radio
@@ -542,6 +675,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   // Função para renderizar controle da variável referenciada no modal secundário
   const renderControleReferencia = (variavel) => {
     const tipo = variavel.variavel.tipo;
+    const labelDisplay = getLabelDisplay(variavel);
     
     const valores = variavel.variavel.valores.map(v => ({
       value: v.valor,
@@ -551,7 +685,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     if (tipo === "Combobox") {
       return (
         <ComboboxAutocomplete
-          label={variavel.tituloVariavel}
+          label={labelDisplay}
           placeholder="Selecione um valor"
           data={valores}
           value={valorReferenciaSelecionado || ''}
@@ -561,7 +695,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Radio") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
           <Radio.Group
             value={valorReferenciaSelecionado || ''}
             onChange={handleSelecaoReferencia}
@@ -581,7 +715,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Checkbox") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
           <Checkbox.Group
             value={Array.isArray(valorReferenciaSelecionado) ? valorReferenciaSelecionado : []}
             onChange={handleSelecaoReferencia}
@@ -601,7 +735,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Combobox com múltiplas opções") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
           <MultiSelect
             label=""
             placeholder="Selecione os valores"
@@ -617,8 +751,124 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     }
   };
 
+  // Função para renderizar controle de variável local
+  const renderControleLocal = (variavelLocal) => {
+    // Usa 'controle' do JSON (novo formato) ou 'tipo' (formato antigo) para compatibilidade
+    const tipo = variavelLocal.variavel.controle || variavelLocal.variavel.tipo;
+    const labelDisplay = variavelLocal.variavel.label || variavelLocal.tituloVariavel || 'Variável Local';
+    
+    // Renderiza valores originais (sem expansão)
+    const valores = variavelLocal.variavel.valores.map(v => ({
+      value: v.valor,
+      label: v.descricao
+    }));
+
+    const textoOriginal = variavelLocal.textoOriginal;
+
+    if (tipo === "Combobox") {
+      return (
+        <ComboboxAutocomplete
+          label={labelDisplay}
+          placeholder="Selecione um valor"
+          data={valores}
+          value={valoresSelecionados[textoOriginal] || ''}
+          onChange={(value) => {
+            const novosValores = {
+              ...valoresSelecionados,
+              [textoOriginal]: value
+            };
+            setValoresSelecionados(novosValores);
+            const escolhasSalvas = carregarEscolhas();
+            salvarEscolhas({ ...escolhasSalvas, ...novosValores });
+          }}
+        />
+      );
+    } else if (tipo === "Grupo de Radio") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
+          <Radio.Group
+            value={valoresSelecionados[textoOriginal] || ''}
+            onChange={(value) => {
+              const novosValores = {
+                ...valoresSelecionados,
+                [textoOriginal]: value
+              };
+              setValoresSelecionados(novosValores);
+              const escolhasSalvas = carregarEscolhas();
+              salvarEscolhas({ ...escolhasSalvas, ...novosValores });
+            }}
+          >
+            <Stack mt="xs">
+              {valores.map((valor) => (
+                <Radio
+                  key={valor.value}
+                  value={valor.value}
+                  label={valor.label}
+                />
+              ))}
+            </Stack>
+          </Radio.Group>
+        </Stack>
+      );
+    } else if (tipo === "Grupo de Checkbox") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
+          <Checkbox.Group
+            value={Array.isArray(valoresSelecionados[textoOriginal]) ? valoresSelecionados[textoOriginal] : []}
+            onChange={(value) => {
+              const novosValores = {
+                ...valoresSelecionados,
+                [textoOriginal]: value
+              };
+              setValoresSelecionados(novosValores);
+              const escolhasSalvas = carregarEscolhas();
+              salvarEscolhas({ ...escolhasSalvas, ...novosValores });
+            }}
+          >
+            <Stack mt="xs">
+              {valores.map((valor) => (
+                <Checkbox
+                  key={valor.value}
+                  value={valor.value}
+                  label={valor.label}
+                />
+              ))}
+            </Stack>
+          </Checkbox.Group>
+        </Stack>
+      );
+    } else if (tipo === "Combobox com múltiplas opções") {
+      return (
+        <Stack>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
+          <MultiSelect
+            label=""
+            placeholder="Selecione os valores"
+            data={valores}
+            value={Array.isArray(valoresSelecionados[textoOriginal]) ? valoresSelecionados[textoOriginal] : []}
+            onChange={(value) => {
+              const novosValores = {
+                ...valoresSelecionados,
+                [textoOriginal]: value
+              };
+              setValoresSelecionados(novosValores);
+              const escolhasSalvas = carregarEscolhas();
+              salvarEscolhas({ ...escolhasSalvas, ...novosValores });
+            }}
+            searchable
+            required={false}
+            clearable
+          />
+        </Stack>
+      );
+    }
+  };
+
   const renderControle = (variavel) => {
     const tipo = variavel.variavel.tipo;
+    const labelDisplay = getLabelDisplay(variavel);
     
     // Renderiza valores originais (sem expansão)
     const valores = variavel.variavel.valores.map(v => ({
@@ -629,7 +879,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     if (tipo === "Combobox") {
       return (
         <ComboboxAutocomplete
-          label={variavel.tituloVariavel}
+          label={labelDisplay}
           placeholder="Selecione um valor"
           data={valores}
           value={valoresSelecionados[variavel.id] || ''}
@@ -639,7 +889,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Radio") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
           <Radio.Group
             value={valoresSelecionados[variavel.id] || ''}
             onChange={(value) => handleChange(variavel.id, value)}
@@ -659,7 +909,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Checkbox") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
           <Checkbox.Group
             value={valoresSelecionados[variavel.id] || []}
             onChange={(value) => handleChange(variavel.id, value)}
@@ -679,7 +929,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Combobox com múltiplas opções") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{variavel.tituloVariavel}</Text>
+          <Text size="sm" fw={500}>{labelDisplay}</Text>
           <MultiSelect
             label=""
             placeholder="Selecione os valores"
@@ -733,12 +983,13 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
               </Stack>
             );
           } else if (elemento.tipo === 'medida') {
+            const indice = elemento?.dados?.indice ?? 0;
             return (
               <TextInput
                 key={`medida_${index}`}
-                label="Medida"
-                value={medida}
-                onChange={(event) => setMedida(event.currentTarget.value)}
+                label={quantidadeMedidasNoTexto > 1 ? `Medida ${indice + 1}` : 'Medida'}
+                value={medidas[indice] ?? ''}
+                onChange={(event) => handleMedidaChange(indice, event.currentTarget.value)}
                 placeholder="Digite a medida"
               />
             );
@@ -780,6 +1031,14 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
                 );
               }
             }
+          } else if (elemento.tipo === 'variavelLocal') {
+            // Renderiza variável local
+            const variavelLocal = elemento.dados;
+            return (
+              <div key={`variavelLocal_${index}`}>
+                {renderControleLocal(variavelLocal)}
+              </div>
+            );
           }
           return null;
         })}

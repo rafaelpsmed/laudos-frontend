@@ -12,6 +12,7 @@ import Highlight from '@tiptap/extension-highlight';
 import FontFamily from '@tiptap/extension-font-family';
 import FontSize from 'tiptap-fontsize-extension';
 import Table from '@tiptap/extension-table';
+
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
@@ -25,6 +26,147 @@ import pluralize from '../utils/pluralizar';
 
 // Função para transcrição de áudio
 import { useAudioTranscription } from '../utils/useAudioTranscription';
+
+// Extensão customizada para LineHeight
+const LineHeight = Extension.create({
+  name: 'lineHeight',
+  
+  addOptions() {
+    return {
+      types: ['paragraph', 'heading'],
+    };
+  },
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: element => element.style.lineHeight?.replace('px', '') || null,
+            renderHTML: attributes => {
+              if (!attributes.lineHeight) {
+                return {};
+              }
+              return {
+                style: `line-height: ${attributes.lineHeight}`,
+              };
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  addCommands() {
+    return {
+      setLineHeight: (lineHeight) => ({ commands, tr, state, dispatch }) => {
+        const { selection } = state;
+        const { from, to } = selection;
+        let modified = false;
+        const nodesToUpdate = [];
+
+        // Coleta todos os parágrafos e headings na seleção
+        state.doc.nodesBetween(from, to, (node, pos) => {
+          if (this.options.types.includes(node.type.name)) {
+            nodesToUpdate.push({ node, pos });
+          }
+        });
+
+        // Se não encontrou nenhum nó na seleção, aplica ao parágrafo atual
+        if (nodesToUpdate.length === 0) {
+          const { $from } = selection;
+          let node = $from.parent;
+          let pos = $from.before($from.depth);
+          
+          // Se o nó pai não é um parágrafo/heading, procura o ancestral mais próximo
+          if (!this.options.types.includes(node.type.name)) {
+            for (let d = $from.depth; d > 0; d--) {
+              const ancestor = $from.node(d);
+              if (this.options.types.includes(ancestor.type.name)) {
+                node = ancestor;
+                pos = $from.before(d);
+                break;
+              }
+            }
+          }
+
+          if (this.options.types.includes(node.type.name)) {
+            nodesToUpdate.push({ node, pos });
+          }
+        }
+
+        // Aplica o lineHeight a todos os nós encontrados
+        if (dispatch && nodesToUpdate.length > 0) {
+          // Ordena por posição em ordem reversa para evitar problemas com índices mudando
+          nodesToUpdate.sort((a, b) => b.pos - a.pos);
+          
+          nodesToUpdate.forEach(({ node, pos }) => {
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              lineHeight: lineHeight || null,
+            });
+            modified = true;
+          });
+        }
+
+        return modified;
+      },
+      unsetLineHeight: () => ({ commands, tr, state, dispatch }) => {
+        const { selection } = state;
+        const { from, to } = selection;
+        let modified = false;
+        const nodesToUpdate = [];
+
+        // Coleta todos os parágrafos e headings na seleção
+        state.doc.nodesBetween(from, to, (node, pos) => {
+          if (this.options.types.includes(node.type.name)) {
+            nodesToUpdate.push({ node, pos });
+          }
+        });
+
+        // Se não encontrou nenhum nó na seleção, aplica ao parágrafo atual
+        if (nodesToUpdate.length === 0) {
+          const { $from } = selection;
+          let node = $from.parent;
+          let pos = $from.before($from.depth);
+          
+          // Se o nó pai não é um parágrafo/heading, procura o ancestral mais próximo
+          if (!this.options.types.includes(node.type.name)) {
+            for (let d = $from.depth; d > 0; d--) {
+              const ancestor = $from.node(d);
+              if (this.options.types.includes(ancestor.type.name)) {
+                node = ancestor;
+                pos = $from.before(d);
+                break;
+              }
+            }
+          }
+
+          if (this.options.types.includes(node.type.name)) {
+            nodesToUpdate.push({ node, pos });
+          }
+        }
+
+        // Remove o lineHeight de todos os nós encontrados
+        if (dispatch && nodesToUpdate.length > 0) {
+          // Ordena por posição em ordem reversa para evitar problemas com índices mudando
+          nodesToUpdate.sort((a, b) => b.pos - a.pos);
+          
+          nodesToUpdate.forEach(({ node, pos }) => {
+            const attrs = { ...node.attrs };
+            delete attrs.lineHeight;
+            tr.setNodeMarkup(pos, undefined, attrs);
+            modified = true;
+          });
+        }
+
+        return modified;
+      },
+    };
+  },
+});
 
 const editorStyles = {
   '.ProseMirror': {
@@ -122,6 +264,7 @@ const TextEditor = forwardRef(({
   onChange, 
   label = "Editor de Texto",
   onSelectionUpdate,
+  onCursorPositionChange,
   onClick,
   aguardandoClique,
   aguardandoSelecao,
@@ -145,6 +288,8 @@ const TextEditor = forwardRef(({
   const lastProcessedTextRef = useRef('');
   const debounceTimeoutRef = useRef(null);
   const lastSpaceTimeRef = useRef(0); // Para detectar 2 espaços consecutivos
+  // Guarda o último HTML emitido pelo próprio editor para evitar setContent redundante (que reseta o cursor)
+  const lastHtmlFromEditorRef = useRef('');
   
   // Estados para auto-save
   const [hasAutoSavedContent, setHasAutoSavedContent] = useState(false);
@@ -286,7 +431,6 @@ const TextEditor = forwardRef(({
           },
         },
       }),
-
       BulletList.extend({
         addInputRules() {
           return [];         
@@ -387,6 +531,7 @@ const TextEditor = forwardRef(({
         newGroupDelay: 500,
       }),
       Link,
+      LineHeight,
       TextStyle.configure({
         types: ['textStyle'],
         defaultStyle: {
@@ -420,7 +565,14 @@ const TextEditor = forwardRef(({
 
     onUpdate: ({ editor }) => {
       // Chama onChange para manter o estado atualizado
-      onChange(editor.getHTML());
+      const html = editor.getHTML();
+      lastHtmlFromEditorRef.current = html;
+      onChange(html);
+    },
+    onSelectionUpdate: ({ editor }) => {
+      if (onCursorPositionChange) {
+        onCursorPositionChange(editor.state.selection.from);
+      }
     },
     onCreate: ({ editor }) => {
       if (!editor) return;
@@ -725,8 +877,22 @@ const TextEditor = forwardRef(({
 
   // Atualiza o conteúdo do editor quando a prop content mudar
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content || '');
+    if (!editor) return;
+    const next = content || '';
+    // Se a mudança veio do próprio editor, não reaplica setContent (evita resetar o cursor)
+    if (next === lastHtmlFromEditorRef.current) return;
+    if (next !== editor.getHTML()) {
+      // Preserva seleção atual para evitar o cursor "pular pro fim" após setContent
+      const { from, to } = editor.state.selection;
+
+      editor.commands.setContent(next);
+
+      // Restaura seleção (clamp para evitar posições inválidas se o conteúdo mudou)
+      const maxPos = editor.state.doc.content.size;
+      const safeFrom = Math.max(0, Math.min(from, maxPos));
+      const safeTo = Math.max(0, Math.min(to, maxPos));
+      editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+      editor.commands.focus();
     }
   }, [content, editor]);
 
@@ -810,6 +976,18 @@ const TextEditor = forwardRef(({
     { value: '48pt', label: '48pt' },
   ];
 
+  const espacamentosEntreLinhas = [
+    { value: '1.0', label: '1.0' },
+    { value: '1.5', label: '1.5' },
+    { value: '2.0', label: '2.0' },
+    { value: '2.5', label: '2.5' },
+    { value: '3.0', label: '3.0' },
+    { value: '3.5', label: '3.5' },
+    { value: '4.0', label: '4.0' },
+    { value: '4.5', label: '4.5' },
+    { value: '5.0', label: '5.0' },
+
+  ];
   const handleEditorClick = (event) => {
     if (aguardandoClique && onClick) {
       onClick();
@@ -850,6 +1028,12 @@ const TextEditor = forwardRef(({
   const handleFontSizeChange = (value) => {
     if (editor) {
       editor.commands.setFontSize(value);
+    }
+  };
+
+  const handleEspacamentoEntreLinhasChange = (value) => {
+    if (editor && value) {
+      editor.commands.setLineHeight(value);
     }
   };
 
@@ -1186,6 +1370,7 @@ const TextEditor = forwardRef(({
                 placeholder="Tamanho"
                 data={fontSizes}
                 value={editor?.getAttributes('textStyle').fontSize}
+                // editor.commands.setLineHeight('1.1')
                 onChange={handleFontSizeChange}
                 style={{ width: 100 }}
               />
@@ -1262,6 +1447,40 @@ const TextEditor = forwardRef(({
                   <IconArrowRight size={16} />
                 </RichTextEditor.Control>
               </Tooltip>
+            </RichTextEditor.ControlsGroup>
+
+            <RichTextEditor.ControlsGroup>
+              <RichTextEditor.Control>
+
+              
+              <Tooltip label="Espaçamento entre linhas">
+                <Select
+                  size="xs"
+                  placeholder="Espaço"
+                  data={espacamentosEntreLinhas}
+                  value={(() => {
+                    if (!editor) return null;
+                    const { $from } = editor.state.selection;
+                    let node = $from.parent;
+                    
+                    // Se o nó pai não é um parágrafo/heading, procura o ancestral mais próximo
+                    if (node.type.name !== 'paragraph' && node.type.name !== 'heading') {
+                      for (let d = $from.depth; d > 0; d--) {
+                        const ancestor = $from.node(d);
+                        if (ancestor.type.name === 'paragraph' || ancestor.type.name === 'heading') {
+                          node = ancestor;
+                          break;
+                        }
+                      }
+                    }
+                    
+                    return node?.attrs?.lineHeight || null;
+                  })()}
+                  onChange={handleEspacamentoEntreLinhasChange}
+                  style={{ width: 100 }}
+                />
+                </Tooltip>
+                </RichTextEditor.Control>
             </RichTextEditor.ControlsGroup>
           </RichTextEditor.Toolbar>
 

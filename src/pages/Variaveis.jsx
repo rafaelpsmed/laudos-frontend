@@ -10,6 +10,7 @@ function Variaveis() {
   const [variavelSelecionada, setVariavelSelecionada] = useState(null);
   const [tipoControle, setTipoControle] = useState('');
   const [titulo, setTitulo] = useState('');
+  const [label, setLabel] = useState('');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [valores, setValores] = useState([]);
@@ -29,6 +30,7 @@ function Variaveis() {
     setVariavelSelecionada(variavel);
     setVariavelId(variavel.id);
     setTitulo(variavel.tituloVariavel);
+    setLabel(variavel.variavel.label || '');
     setTipoControle(variavel.variavel.tipo);
     setValores(variavel.variavel.valores || []);
     
@@ -80,6 +82,7 @@ function Variaveis() {
         variavel: {
           tipo: tipoControle,
           valores: valores,
+          ...(label ? { label: label } : {}),
           ...(tipoControle === "Grupo de Checkbox" || tipoControle === "Combobox com múltiplas opções" ? {
             delimitador: delimitador,
             ultimoDelimitador: ultimoDelimitador
@@ -131,6 +134,7 @@ function Variaveis() {
         variavel: {
           tipo: tipoControle,
           valores: valores,
+          ...(label ? { label: label } : {}),
           ...(tipoControle === "Grupo de Checkbox" || tipoControle === "Combobox com múltiplas opções" ? {
             delimitador: delimitador,
             ultimoDelimitador: ultimoDelimitador
@@ -178,6 +182,7 @@ function Variaveis() {
   const handleClear = () => {
     setVariavelSelecionada(null);
     setTitulo('');
+    setLabel('');
     setDescricao('');
     setValor('');
     setValores([]);
@@ -281,6 +286,14 @@ function Variaveis() {
               value={titulo}
               onChange={(event) => setTitulo(event.currentTarget.value)}
               required
+            />
+
+            <TextInput
+              label="Label"
+              placeholder="Digite o label que aparecerá no modal (opcional)"
+              value={label}
+              onChange={(event) => setLabel(event.currentTarget.value)}
+              description="Se não preenchido, será usado o título"
             />
 
             <Group grow>
