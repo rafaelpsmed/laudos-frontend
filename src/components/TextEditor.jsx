@@ -278,7 +278,8 @@ const TextEditor = forwardRef(({
 }, ref) => {
   // Estados gerais do componente
   const [ultimaPosicaoDolar, setUltimaPosicaoDolar] = useState(-1);
-  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
+  //const [contextMenu, setContextMenu] = useState({ visible: false, orientation: 'vertical', x: 0, y: 0 });
+  const [contextMenu, setContextMenu] = useState({ visible: false});
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false); // flag para evitar loops
   const [modalTabelaAberto, setModalTabelaAberto] = useState(false);
@@ -766,7 +767,7 @@ const TextEditor = forwardRef(({
           
           if (posicaoDolar !== -1) {
             // Move o cursor para a posição do $
-            editor.commands.setTextSelection({from: posicaoDolar+1, to: posicaoDolar+3});
+            editor.commands.setTextSelection({from: posicaoDolar+1, to: posicaoDolar+2});
             // seleciona o texto encontrado
             
             editor.commands.focus();
@@ -1545,7 +1546,7 @@ const TextEditor = forwardRef(({
             border: '1px solid #dee2e6',
             borderRadius: '4px',
             display: 'flex',
-            flexDirection: 'row',
+            flexDirection: 'column',
             gap: '4px'
           }}
         >

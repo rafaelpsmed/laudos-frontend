@@ -17,6 +17,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   const [variavelIdOrigem, setVariavelIdOrigem] = useState(null);
   const [valorOrigem, setValorOrigem] = useState(null);
   const [valorReferenciaSelecionado, setValorReferenciaSelecionado] = useState(null);
+  const [corDaVariavelNoTexto, setCorDaVariavelNoTexto] = useState(null);
 
   // Função para salvar as escolhas no localStorage
   const salvarEscolhas = (valores) => {
@@ -38,6 +39,11 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     }
   };
 
+  const gerarCoresAleatoriasParaRealcarELocalizarVariavesNoTexto = () => {
+    const cores = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#000080'];
+    return cores[Math.floor(Math.random() * cores.length)];
+  };
+  
   const quantidadeMedidasNoTexto = (elementosOrdenados || []).filter(e => e.tipo === 'medida').length;
 
   // Função auxiliar para obter o label de exibição da variável
@@ -87,6 +93,22 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
             // Se aparece múltiplas vezes, cria estados separados para cada instância
             for (let i = 0; i < aparicoes; i++) {
               const instanciaId = `${titulo}_${i}`;
+              const corDaVariavelNoTextoX = gerarCoresAleatoriasParaRealcarELocalizarVariavesNoTexto();
+              setCorDaVariavelNoTexto(corDaVariavelNoTextoX);
+
+              //localiza a instância no texto e realca com a cor da variável
+              // const texto = elementosOrdenados.find(elemento => elemento.tipo === 'variavel' && elemento.dados.tituloVariavel === titulo)?.dados.textoOriginal;
+              // if (texto) {
+              //   const textoArray = texto.split('');
+              //   textoArray.forEach((char, index) => {
+              //     if (char === '{' && textoArray[index + 1] === titulo && textoArray[index + 2] === '}') {
+              //       textoArray[index] = `<span style="color: ${corDaVariavelNoTexto};">${char}</span>`;
+              //     }
+              //   });
+              //   const textoRealcado = textoArray.join('');
+              //   console.log(textoRealcado);
+              // }
+
               if (escolhasSalvas[instanciaId] !== undefined) {
                 if (variavel.variavel.tipo === "Grupo de Checkbox" || variavel.variavel.tipo === "Combobox com múltiplas opções") {
                   valoresIniciais[instanciaId] = Array.isArray(escolhasSalvas[instanciaId])
@@ -115,6 +137,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
             }
           }
         });
+
+        
 
         // Inicializa valores para variáveis locais também
         elementosOrdenados.forEach(elemento => {
@@ -224,6 +248,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     });
   };
 
+
   const handleChange = (variavelId, valor) => {
     // Verifica se o valor selecionado contém referências
     const referencias = detectarReferencias(valor);
@@ -327,6 +352,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     if (tipo === "Combobox") {
       return (
         <ComboboxAutocomplete
+          style={{ color: corDaVariavelNoTexto }}
           label={`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}
           placeholder="Selecione um valor"
           data={valores}
@@ -357,7 +383,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Checkbox") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
+          <Text style={{ color: corDaVariavelNoTexto }}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
+          {/* <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text> */}
           <Checkbox.Group
             value={Array.isArray(value) ? value : []}
             onChange={(value) => handleChange(instanciaId, value)}

@@ -1589,10 +1589,11 @@ function Laudos() {
 
       async function copiarTextoComFormato() {
         const textoComFormato = editor.getHTML();
+        const htmlComCharset = `<meta charset="utf-8">${textoComFormato}`;
 
         const textoParaClipboardFormatado = new ClipboardItem({
-          'text/html': new Blob([textoComFormato], { type: 'text/html' }),
-          
+          'text/html': new Blob([htmlComCharset], { type: 'text/html' }),
+          'text/plain': new Blob([editor.getText()], { type: 'text/plain' }),
         });
 
         await navigator.clipboard.write([textoParaClipboardFormatado]);
