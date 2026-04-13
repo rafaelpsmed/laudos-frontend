@@ -1,9 +1,10 @@
-import { Modal, Stack, Text, Checkbox, Group, Button, TextInput, Radio, Select, MultiSelect, Divider } from '@mantine/core';
-import { useState, useEffect } from 'react';
+import { Modal, Stack, Text, Checkbox, Group, Button, TextInput, Radio, Select, MultiSelect, Divider, Tooltip } from '@mantine/core';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { IconInfoCircle } from '@tabler/icons-react';
 import api from '../api';
 import ComboboxAutocomplete from './componentesVariaveisModal/ComboboxAutocomplete';
 
-function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, elementosOrdenados, onConfirm, tituloFrase, temMedida }) {
+function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, elementosOrdenados, onConfirm, tituloFrase, temMedida, textoPuro }) {
   const [valoresSelecionados, setValoresSelecionados] = useState({});
   const [variaveisDetalhes, setVariaveisDetalhes] = useState([]);
   // Uma medida por ocorrência de '$' no texto
@@ -18,6 +19,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   const [valorOrigem, setValorOrigem] = useState(null);
   const [valorReferenciaSelecionado, setValorReferenciaSelecionado] = useState(null);
   const [corDaVariavelNoTexto, setCorDaVariavelNoTexto] = useState(null);
+  const handleConfirmRef = useRef(null);
 
   // Função para salvar as escolhas no localStorage
   const salvarEscolhas = (valores) => {
@@ -50,6 +52,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
   const getLabelDisplay = (variavel) => {
     return variavel?.variavel?.label || variavel?.tituloVariavel || '';
   };
+
+
 
   useEffect(() => {
     // console.log('temMedida:', temMedida);
@@ -235,6 +239,18 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     }
   }, [opened, gruposOpcoes, temMedida, quantidadeMedidasNoTexto]);
 
+  useEffect(() => {
+    if (!opened) return;
+    const handler = (e) => {
+      if (e.key === 'F8') {
+        e.preventDefault();
+        handleConfirmRef.current();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [opened]);
+
   const handleMedidaChange = (indice, valor) => {
     const novas = [...(medidas || [])];
     novas[indice] = valor;
@@ -336,34 +352,74 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     }
   };
 
+  const gerarTooltipContexto = (posicaoNoTexto, tituloVariavel) => {
+    if (!textoPuro || typeof posicaoNoTexto !== 'number') return null;
+    const inicioAntes = Math.max(0, posicaoNoTexto - 75);
+    const fimDepois = Math.min(textoPuro.length, posicaoNoTexto + tituloVariavel.length + 2 + 75);
+    const contextoAntes = textoPuro.substring(inicioAntes, posicaoNoTexto);
+    const contextoDepois = textoPuro.substring(posicaoNoTexto + tituloVariavel.length + 2, fimDepois);
+    const prefixo = inicioAntes > 0 ? '...' : '';
+    const sufixo = fimDepois < textoPuro.length ? '...' : '';
+
+    return (
+      <Text size="xs" style={{ whiteSpace: 'pre-wrap' }}>
+        {prefixo}{contextoAntes}<Text span fw={700} c="yellow">{`{${tituloVariavel}}`}</Text>{contextoDepois}{sufixo}
+      </Text>
+    );
+  };
+
+  const renderLabelInstancia = (labelDisplay, instanciaNumero, totalInstancias, posicaoNoTexto, tituloVariavel) => {
+    const tooltipContent = gerarTooltipContexto(posicaoNoTexto, tituloVariavel);
+    return (
+      <Group gap={6} align="center">
+        <Text size="sm" fw={500}>
+          {`${labelDisplay} (instância ${instanciaNumero} de ${totalInstancias})`}
+        </Text>
+        {tooltipContent && (
+          <Tooltip
+            label={tooltipContent}
+            multiline
+            w={420}
+            position="right"
+            withArrow
+          >
+            <IconInfoCircle size={16} style={{ cursor: 'pointer', color: '#868e96' }} />
+          </Tooltip>
+        )}
+      </Group>
+    );
+  };
+
   // Função auxiliar para renderizar controles de variável por instância
-  const renderControleInstancia = (variavel, instanciaId, tituloBase) => {
+  const renderControleInstancia = (variavel, instanciaId, tituloBase, posicaoNoTexto, instanciaNumero, totalInstancias) => {
     const tipo = variavel.variavel.tipo;
     const labelDisplay = getLabelDisplay(variavel);
 
-    // Renderiza valores originais (sem expansão)
     const valores = variavel.variavel.valores.map(v => ({
       value: v.valor,
       label: v.descricao
     }));
 
     const value = valoresSelecionados[instanciaId] || '';
+    const labelElement = renderLabelInstancia(labelDisplay, instanciaNumero, totalInstancias, posicaoNoTexto, tituloBase);
 
     if (tipo === "Combobox") {
       return (
-        <ComboboxAutocomplete
-          style={{ color: corDaVariavelNoTexto }}
-          label={`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}
-          placeholder="Selecione um valor"
-          data={valores}
-          value={value}
-          onChange={(value) => handleChange(instanciaId, value)}
-        />
+        <Stack gap={4}>
+          {labelElement}
+          <ComboboxAutocomplete
+            label=""
+            placeholder="Selecione um valor"
+            data={valores}
+            value={value}
+            onChange={(value) => handleChange(instanciaId, value)}
+          />
+        </Stack>
       );
     } else if (tipo === "Grupo de Radio") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
+          {labelElement}
           <Radio.Group
             value={value}
             onChange={(value) => handleChange(instanciaId, value)}
@@ -383,8 +439,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Grupo de Checkbox") {
       return (
         <Stack>
-          <Text style={{ color: corDaVariavelNoTexto }}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
-          {/* <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text> */}
+          {labelElement}
           <Checkbox.Group
             value={Array.isArray(value) ? value : []}
             onChange={(value) => handleChange(instanciaId, value)}
@@ -404,7 +459,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     } else if (tipo === "Combobox com múltiplas opções") {
       return (
         <Stack>
-          <Text size="sm" fw={500}>{`${labelDisplay} (instância ${instanciaId.split('_')[1]})`}</Text>
+          {labelElement}
           <MultiSelect
             label=""
             placeholder="Selecione os valores"
@@ -559,6 +614,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     onConfirm(resultado);
     onClose();
   };
+
+  handleConfirmRef.current = handleConfirm;
 
   // Função para atualizar valor quando usuário seleciona (sem aplicar ainda)
   const handleSelecaoReferencia = (valor) => {
@@ -972,6 +1029,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     }
   };
 
+
   return (
     <Modal
       opened={opened}
@@ -981,100 +1039,103 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     >
       <Stack>
         {/* Renderiza elementos na ordem que aparecem no texto */}
-        {elementosOrdenados && elementosOrdenados.map((elemento, index) => {
-          if (elemento.tipo === 'grupo') {
-            return (
-              <Stack key={`grupo_${index}`} spacing="xs">
-                <Text size="sm" fw={500}>Grupo de opções {index + 1}:</Text>
-                {/* <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '4px 8px', borderRadius: '4px' }}>
-                  {elemento.dados.textoOriginal}
-                </Text> */}
-                <Radio.Group
-                  value={opcoesRadio[`grupo_${index}`] || elemento.dados.opcoes[0]}
-                  onChange={(value) => setOpcoesRadio(prev => ({
-                    ...prev,
-                    [`grupo_${index}`]: value
-                  }))}
-                >
-                  <Stack mt="xs" spacing="xs">
-                    {elemento.dados.opcoes.map((opcao) => (
-                      <Radio
-                        key={opcao}
-                        value={opcao}
-                        label={opcao}
-                      />
-                    ))}
-                  </Stack>
-                </Radio.Group>
-                {/* <Divider my="xs" /> */}
-              </Stack>
-            );
-          } else if (elemento.tipo === 'medida') {
-            const indice = elemento?.dados?.indice ?? 0;
-            return (
-              <TextInput
-                key={`medida_${index}`}
-                label={quantidadeMedidasNoTexto > 1 ? `Medida ${indice + 1}` : 'Medida'}
-                value={medidas[indice] ?? ''}
-                onChange={(event) => handleMedidaChange(indice, event.currentTarget.value)}
-                placeholder="Digite a medida"
-              />
-            );
-          } else if (elemento.tipo === 'variavel') {
-            // Encontra os detalhes da variável
-            const variavelDetalhes = variaveisDetalhes.find(v => v.id === elemento.dados.id);
-            if (variavelDetalhes) {
-              const titulo = elemento.dados.tituloVariavel;
-              const aparicoes = contagemVariaveis[titulo] || 1;
+        {(() => {
+          const avisosExibidos = new Set();
+          return elementosOrdenados && elementosOrdenados.map((elemento, index) => {
+            if (elemento.tipo === 'grupo') {
+              return (
+                <Stack key={`grupo_${index}`} spacing="xs">
+                  <Text size="sm" fw={500}>Grupo de opções {index + 1}:</Text>
+                  <Radio.Group
+                    value={opcoesRadio[`grupo_${index}`] || elemento.dados.opcoes[0]}
+                    onChange={(value) => setOpcoesRadio(prev => ({
+                      ...prev,
+                      [`grupo_${index}`]: value
+                    }))}
+                  >
+                    <Stack mt="xs" spacing="xs">
+                      {elemento.dados.opcoes.map((opcao) => (
+                        <Radio
+                          key={opcao}
+                          value={opcao}
+                          label={opcao}
+                        />
+                      ))}
+                    </Stack>
+                  </Radio.Group>
+                </Stack>
+              );
+            } else if (elemento.tipo === 'medida') {
+              const indice = elemento?.dados?.indice ?? 0;
+              return (
+                <TextInput
+                  key={`medida_${index}`}
+                  label={quantidadeMedidasNoTexto > 1 ? `Medida ${indice + 1}` : 'Medida'}
+                  value={medidas[indice] ?? ''}
+                  onChange={(event) => handleMedidaChange(indice, event.currentTarget.value)}
+                  placeholder="Digite a medida"
+                />
+              );
+            } else if (elemento.tipo === 'variavel') {
+              const variavelDet = variaveisDetalhes.find(v => v.id === elemento.dados.id);
+              if (variavelDet) {
+                const titulo = elemento.dados.tituloVariavel;
+                const aparicoes = contagemVariaveis[titulo] || 1;
 
-              if (aparicoes > 1) {
-                // Se aparece múltiplas vezes, encontra qual instância renderizar
-                // Encontra a posição desta variável entre as ocorrências
-                let posicao = 0;
-                for (let i = 0; i < elementosOrdenados.length; i++) {
-                  const el = elementosOrdenados[i];
-                  if (el.tipo === 'variavel' && el.dados.tituloVariavel === titulo) {
-                    if (el === elemento) break;
-                    posicao++;
+                if (aparicoes > 1) {
+                  let posicao = 0;
+                  for (let i = 0; i < elementosOrdenados.length; i++) {
+                    const el = elementosOrdenados[i];
+                    if (el.tipo === 'variavel' && el.dados.tituloVariavel === titulo) {
+                      if (el === elemento) break;
+                      posicao++;
+                    }
                   }
-                }
 
-                const instanciaId = `${titulo}_${posicao}`;
-                const variavelInstancia = variaveisPorInstancia[instanciaId];
+                  const instanciaId = `${titulo}_${posicao}`;
+                  const variavelInstancia = variaveisPorInstancia[instanciaId];
+                  const deveMostrarAviso = !avisosExibidos.has(titulo);
+                  if (deveMostrarAviso) {
+                    avisosExibidos.add(titulo);
+                  }
 
-                if (variavelInstancia) {
+                  if (variavelInstancia) {
+                    return (
+                      <div key={`variavel_${index}`}>
+                        {deveMostrarAviso && (
+                          <Text size="sm" c="orange" fw={500} mt="md" mb="xs">
+                            Várias ocorrências da variável &quot;{titulo}&quot; foram encontradas no texto. As ocorrências seguem na ordem em que aparecem no texto. Passe o mouse no ícone ao lado para visualizar onde a varíavel encontra-se no texto.
+                          </Text>
+                        )}
+                        {renderControleInstancia(variavelInstancia, instanciaId, titulo, elemento.posicao, posicao + 1, aparicoes)}
+                      </div>
+                    );
+                  }
+                } else {
                   return (
                     <div key={`variavel_${index}`}>
-                      {renderControleInstancia(variavelInstancia, instanciaId, titulo)}
+                      {renderControle(variavelDet)}
                     </div>
                   );
                 }
-              } else {
-                // Se aparece apenas uma vez, usa o comportamento normal
-                return (
-                  <div key={`variavel_${index}`}>
-                    {renderControle(variavelDetalhes)}
-                  </div>
-                );
               }
+            } else if (elemento.tipo === 'variavelLocal') {
+              const variavelLocal = elemento.dados;
+              return (
+                <div key={`variavelLocal_${index}`}>
+                  {renderControleLocal(variavelLocal)}
+                </div>
+              );
             }
-          } else if (elemento.tipo === 'variavelLocal') {
-            // Renderiza variável local
-            const variavelLocal = elemento.dados;
-            return (
-              <div key={`variavelLocal_${index}`}>
-                {renderControleLocal(variavelLocal)}
-              </div>
-            );
-          }
-          return null;
-        })}
+            return null;
+          });
+        })()}
 
         <Group position="right" mt="md">
-          <Button onClick={handleConfirm}>Confirmar</Button>
+          <Button onClick={handleConfirm}>Confirmar (F8)</Button>
         </Group>
       </Stack>
-
+      
       {/* Modal secundário para variáveis referenciadas */}
       <Modal
         opened={modalReferenciaAberto}
@@ -1114,6 +1175,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
                   valorReferenciaSelecionado === '' ||
                   (Array.isArray(valorReferenciaSelecionado) && valorReferenciaSelecionado.length === 0)
                 }
+                
               >
                 Confirmar
               </Button>

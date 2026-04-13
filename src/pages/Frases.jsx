@@ -1954,28 +1954,32 @@ function Frases() {
                 </Group>
 
                 <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
-                  <Input
-                    placeholder="Digite o texto a ser substituído"                  
+                  <Textarea
+                    placeholder="Digite o texto a ser substituído"
+                    autosize
+                    minRows={3}
                     value={substituicaoFraseBase}
-                    onChange={(event) => setSubstituicaoFraseBase(event.currentTarget.value)}                  
+                    onChange={(event) => setSubstituicaoFraseBase(event.currentTarget.value)}
                   />
                 </Input.Wrapper>
 
                 <Divider label="Outras substituições a serem feitas no laudo (opcional)" labelPosition="center" my="md" />              
 
-                {/* Input Procurar Por */}
                 <Input.Wrapper label="Procurar Por">
-                  <Input
+                  <Textarea
                     placeholder="Digite o texto a ser procurado"
+                    autosize
+                    minRows={3}
                     value={procurarPor}
                     onChange={(event) => setProcurarPor(event.currentTarget.value)}
                   />
                 </Input.Wrapper>
 
-                {/* Input Substituir Por */}
                 <Input.Wrapper label="Substituir Por">
-                  <Input
+                  <Textarea
                     placeholder="Digite o texto para substituição"
+                    autosize
+                    minRows={3}
                     value={substituirPor}
                     onChange={(event) => setSubstituirPor(event.currentTarget.value)}
                   />
@@ -2007,10 +2011,10 @@ function Frases() {
                       }}>
                         <Group justify="space-between" align="flex-start">
                           <Stack spacing="xs" style={{ flex: 1 }}>
-                            <Text size="sm">
+                            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                               <strong>Procurar por:</strong> {sub.procurarPor}
                             </Text>
-                            <Text size="sm">
+                            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                               <strong>Substituir por:</strong> {sub.substituirPor}
                             </Text>
                           </Stack>
@@ -2250,28 +2254,32 @@ function Frases() {
                 </Group>
 
                 <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
-                  <Input
-                    placeholder="Digite o texto a ser substituído"                  
+                  <Textarea
+                    placeholder="Digite o texto a ser substituído"
+                    autosize
+                    minRows={3}
                     value={substituicaoFraseBaseSemModelo}
-                    onChange={(event) => setSubstituicaoFraseBaseSemModelo(event.currentTarget.value)}                  
+                    onChange={(event) => setSubstituicaoFraseBaseSemModelo(event.currentTarget.value)}
                   />
                 </Input.Wrapper>
 
                 <Divider label="Outras substituições a serem feitas no laudo (opcional)" labelPosition="center" my="md" />              
 
-                {/* Input Procurar Por */}
                 <Input.Wrapper label="Procurar Por">
-                  <Input
+                  <Textarea
                     placeholder="Digite o texto a ser procurado"
+                    autosize
+                    minRows={3}
                     value={procurarPorSemModelo}
                     onChange={(event) => setProcurarPorSemModelo(event.currentTarget.value)}
                   />
                 </Input.Wrapper>
 
-                {/* Input Substituir Por */}
                 <Input.Wrapper label="Substituir Por">
-                  <Input
+                  <Textarea
                     placeholder="Digite o texto para substituição"
+                    autosize
+                    minRows={3}
                     value={substituirPorSemModelo}
                     onChange={(event) => setSubstituirPorSemModelo(event.currentTarget.value)}
                   />
@@ -2303,10 +2311,10 @@ function Frases() {
                       }}>
                         <Group justify="space-between" align="flex-start">
                           <Stack spacing="xs" style={{ flex: 1 }}>
-                            <Text size="sm">
+                            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                               <strong>Procurar por:</strong> {sub.procurarPor}
                             </Text>
-                            <Text size="sm">
+                            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                               <strong>Substituir por:</strong> {sub.substituirPor}
                             </Text>
                           </Stack>

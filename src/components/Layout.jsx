@@ -1,4 +1,5 @@
 import { AppShell, Burger, Group, NavLink, Button, Text, ActionIcon, Tooltip } from '@mantine/core';
+import { ColorSchemeToggle } from './ColorSchemeToggle';
 import { useDisclosure } from '@mantine/hooks';
 import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconTransfer, IconSettings, IconChevronLeft, IconChevronRight, IconBrain } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
@@ -76,6 +77,7 @@ function Layout({ children }) {
           </Group>
 
           <Group>
+            <ColorSchemeToggle />
             <Text><strong>Bem-vindo(a)</strong>, {username || 'Usuário'}</Text>
             <Button
               variant="subtle"

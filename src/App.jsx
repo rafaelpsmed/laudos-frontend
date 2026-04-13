@@ -42,7 +42,7 @@ import NotFound from './pages/NotFound';
 import Register from './pages/Register';
 import ProtectedRoute from './components/ProtectedRoutes';
 import '@mantine/core/styles.css';
-import { MantineProvider } from '@mantine/core';
+import { MantineProvider, localStorageColorSchemeManager } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 
 // Páginas
@@ -52,11 +52,16 @@ import Variaveis from './pages/Variaveis';
 import Laudos from './pages/Laudos';
 import IA from './pages/IA';
 import TransferirFrases from './pages/TransferirFrases';
+import Landing from './pages/Landing';
+import { useAuth } from './contexts/AuthContext';
 
 // Estilos
-import '@mantine/core/styles.css';
 import '@mantine/tiptap/styles.css';
-import '@mantine/notifications/styles.css';  
+import '@mantine/notifications/styles.css';
+
+const colorSchemeManager = localStorageColorSchemeManager({
+  key: 'laudos-mantine-color-scheme',
+});
 
 function Logout() {
   localStorage.clear();
@@ -68,16 +73,23 @@ function RegisterAndLogout() {
   return <Register />;
 }
 
+function RootLanding() {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? (
+    <ProtectedRoute>
+      <Home />
+    </ProtectedRoute>
+  ) : (
+    <Landing />
+  );
+}
+
 function App() {
   return (
-    <MantineProvider>
+    <MantineProvider defaultColorScheme="auto" colorSchemeManager={colorSchemeManager}>
       <Notifications />
       <Routes>
-        <Route path="/" element={
-          <ProtectedRoute>
-            <Home />
-          </ProtectedRoute>
-        } />
+        <Route path="/" element={<RootLanding />} />
 
         <Route path="/modelos" element={
           <ProtectedRoute>

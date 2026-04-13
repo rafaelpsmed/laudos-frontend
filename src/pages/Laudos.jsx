@@ -14,6 +14,106 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 // Função para pluralizar palavras e frases
 import pluralize from '../utils/pluralizar';
 
+function escapeHtmlForInlineText(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function stripInlineFontSizeAndFamily(root) {
+  root.querySelectorAll('*').forEach((el) => {
+    if (!el.hasAttribute('style')) return;
+    el.style.removeProperty('font-family');
+    el.style.removeProperty('font-size');
+    if (!el.style.cssText.trim()) {
+      el.removeAttribute('style');
+    }
+  });
+}
+
+/**
+ * Junta o HTML do editor em um único <p>, preservando negrito/itálico etc. Blocos são separados por <br>.
+ * @param {string} html
+ * @param {{ fontFamily?: string | null, fontSize?: string | null }} [typography] — se informado, aplica no <p> e remove font-family/font-size inline dos descendentes (força global).
+ */
+function mergeEditorHtmlToSingleParagraph(html, typography = {}) {
+  const fontFamily = typography.fontFamily?.trim?.() ? typography.fontFamily.trim() : null;
+  const fontSize = typography.fontSize?.trim?.() ? typography.fontSize.trim() : null;
+  const forceGlobal = Boolean(fontFamily || fontSize);
+
+  const raw = (html || '').trim();
+  const chunks = [];
+
+  if (raw) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(raw, 'text/html');
+    const body = doc.body;
+
+    const walkTopLevel = (nodes) => {
+      for (const node of nodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const t = node.textContent;
+          if (t && t.trim()) {
+            chunks.push(escapeHtmlForInlineText(t));
+          }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node;
+          const tag = el.tagName.toLowerCase();
+          if (tag === 'p') {
+            chunks.push(el.innerHTML);
+          } else if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+            chunks.push(el.innerHTML);
+          } else if (tag === 'blockquote') {
+            chunks.push(el.innerHTML);
+          } else if (tag === 'ul' || tag === 'ol') {
+            el.querySelectorAll(':scope > li').forEach((li) => {
+              chunks.push(li.innerHTML);
+            });
+          } else if (tag === 'table') {
+            el.querySelectorAll('tr').forEach((tr) => {
+              const cells = [];
+              tr.querySelectorAll('th, td').forEach((td) => {
+                cells.push(td.innerHTML);
+              });
+              if (cells.length) chunks.push(cells.join(' '));
+            });
+          } else if (tag === 'div') {
+            walkTopLevel(el.childNodes);
+          } else if (tag === 'pre') {
+            chunks.push(el.innerHTML);
+          } else {
+            chunks.push(el.innerHTML);
+          }
+        }
+      }
+    };
+
+    walkTopLevel(body.childNodes);
+  }
+
+  let inner = chunks.join('<br>');
+
+  if (forceGlobal) {
+    const tmp = new DOMParser().parseFromString(
+      '<!DOCTYPE html><html><body><div id="typo-root"></div></body></html>',
+      'text/html'
+    );
+    const root = tmp.getElementById('typo-root');
+    root.innerHTML = inner;
+    stripInlineFontSizeAndFamily(root);
+    inner = root.innerHTML;
+  }
+
+  const p = document.createElement('p');
+  p.className = 'editor-paragraph';
+  if (fontFamily) p.style.setProperty('font-family', fontFamily);
+  if (fontSize) p.style.setProperty('font-size', fontSize);
+  p.innerHTML = inner;
+  return p.outerHTML;
+}
+
 function Laudos() {
   const [texto, setTexto] = useState('');
   const [metodosModelo, setMetodosModelo] = useState([]);
@@ -35,6 +135,7 @@ function Laudos() {
   const [temTextoSelecionado, setTemTextoSelecionado] = useState(false);
   const [conclusaoDoModelo, setConclusaoDoModelo] = useState('');
   const [tituloFraseAtual, setTituloFraseAtual] = useState('');
+  const [textoPuroParaModal, setTextoPuroParaModal] = useState('');
   const [aguardandoClique, setAguardandoClique] = useState(false);
   const [aguardandoSelecao, setAguardandoSelecao] = useState(false);
   const [aguardandoLinha, setAguardandoLinha] = useState(false);
@@ -159,7 +260,7 @@ function Laudos() {
       const textoFormatado = typeof textoModelo === 'string' ? textoModelo : String(textoModelo);
       
       // Procura por variáveis e grupos de opções no texto do modelo
-      const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados } = await buscarVariaveisNoTexto(textoFormatado);
+      const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } = await buscarVariaveisNoTexto(textoFormatado);
       
       // Se encontrou variáveis, grupos de opções, variáveis locais ou tem '$', guarda o texto temporariamente e abre o modal
       if (variaveis.length > 0 || gruposOpcoes.length > 0 || variaveisLocais.length > 0 || textoFormatado.includes('$')) {
@@ -167,6 +268,7 @@ function Laudos() {
         setVariaveisEncontradas(variaveis);
         setGruposOpcoesEncontrados(gruposOpcoes);
         setElementosOrdenados(elementosOrdenados);
+        setTextoPuroParaModal(textoPuro);
         setFraseTemporaria(null); // Não é uma frase, é um modelo
         setModalVariaveisAberto(true);
       } else {
@@ -314,6 +416,46 @@ function Laudos() {
     const textoComQuebraReal = texto.replace(/\\n/g, '\n');
     // Depois converte as quebras de linha reais para <br>
     return textoComQuebraReal.replace(/\n/g, '<br>');
+  };
+
+  /** Escapa texto para uso literal em RegExp. */
+  const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  /**
+   * Substitui a primeira ocorrência de "procurar" no HTML do editor.
+   * Com uma linha, mantém o comportamento antigo (string + converterQuebrasDeLinha).
+   * Com várias linhas, aceita entre elas marcação típica do TipTap: <br>, </p><p>,
+   * ou </span> seguido de <p> (e opcionalmente <span> antes da linha seguinte), etc.
+   */
+  const substituirPrimeiraOcorrenciaOutras = (conteudoHtml, procurarTextoPlain, substituirHtml) => {
+    if (procurarTextoPlain == null || procurarTextoPlain === '') return conteudoHtml;
+    const textoComQuebraReal = procurarTextoPlain.replace(/\\n/g, '\n');
+    const normalized = textoComQuebraReal.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const linhas = normalized.split('\n');
+
+    if (linhas.length <= 1) {
+      const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
+      return conteudoHtml.replace(procurarPor, substituirHtml);
+    }
+
+    const escapedParts = linhas.map((line) => escapeRegex(line));
+    // Entre trechos de texto: quebra simples, novo parágrafo, ou (comum no TextEditor)
+    // fim de <span> + novo <p class="editor-paragraph"> + opcional <span> com fonte.
+    const separadorEntreLinhas =
+      '(?:<br\\s*/?>' +
+      '|</p>\\s*<p[^>]*>' +
+      '|</span>\\s*</p>\\s*<p[^>]*>\\s*(?:<span[^>]*>)?' +
+      '|</span>\\s*<p[^>]*>\\s*(?:<span[^>]*>)?' +
+      '|</span>\\s*<br\\s*/?>\\s*<span[^>]*>' +
+      ')';
+    const pattern = escapedParts.join(separadorEntreLinhas);
+    try {
+      const regex = new RegExp(pattern);
+      return conteudoHtml.replace(regex, () => substituirHtml);
+    } catch {
+      const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
+      return conteudoHtml.replace(procurarPor, substituirHtml);
+    }
   };
 
   const cursorNoFinalDaFraseBase = (posicaoInicial, deltaInserido) => {
@@ -515,9 +657,12 @@ function Laudos() {
         if (frase.frase.substituicoesOutras && frase.frase.substituicoesOutras.length > 0) {
           let conteudoAtual = editor.getHTML();
           frase.frase.substituicoesOutras.forEach(substituicao => {
-            const procurarPor = converterQuebrasDeLinha(substituicao.procurarPor);
             const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
-            conteudoAtual = conteudoAtual.replace(procurarPor, substituirPor);
+            conteudoAtual = substituirPrimeiraOcorrenciaOutras(
+              conteudoAtual,
+              substituicao.procurarPor,
+              substituirPor
+            );
           });
           editor.commands.setContent(conteudoAtual);
         }
@@ -556,9 +701,12 @@ function Laudos() {
           // Processa as outras substituições
           if (frase.frase.substituicoesOutras && frase.frase.substituicoesOutras.length > 0) {
             frase.frase.substituicoesOutras.forEach(substituicao => {
-              const procurarPor = converterQuebrasDeLinha(substituicao.procurarPor);
               const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
-              novoConteudo = novoConteudo.replace(procurarPor, substituirPor);
+              novoConteudo = substituirPrimeiraOcorrenciaOutras(
+                novoConteudo,
+                substituicao.procurarPor,
+                substituirPor
+              );
             });
           }
 
@@ -641,7 +789,7 @@ function Laudos() {
     }
 
     // Procura por variáveis e grupos de opções no texto
-    const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados } = await buscarVariaveisNoTexto(novoTexto, frase);
+    const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } = await buscarVariaveisNoTexto(novoTexto, frase);
     
     // console.log('📊 Resultado da busca:');
     // console.log('   Variáveis:', variaveis.length);
@@ -688,6 +836,7 @@ function Laudos() {
       setVariaveisEncontradas(variaveis);
       setGruposOpcoesEncontrados(gruposOpcoes);
       setElementosOrdenados(elementosOrdenados);
+      setTextoPuroParaModal(textoPuro);
       setFraseTemporaria(frase);
       setModalVariaveisAberto(true);
 
@@ -1285,7 +1434,8 @@ function Laudos() {
         variaveis: variaveisEncontradas,
         gruposOpcoes: gruposOpcoes,
         variaveisLocais: variaveisLocaisEncontradas,
-        elementosOrdenados: elementosOrdenados
+        elementosOrdenados: elementosOrdenados,
+        textoPuro: textoPuro
       };
     } catch (error) {
       // console.error('Erro ao buscar variáveis:', error);
@@ -1293,7 +1443,8 @@ function Laudos() {
         variaveis: [],
         gruposOpcoes: [],
         variaveisLocais: [],
-        elementosOrdenados: []
+        elementosOrdenados: [],
+        textoPuro: ''
       };
     }
   };
@@ -1439,6 +1590,43 @@ function Laudos() {
         return null;
       }
     }).filter(Boolean); // Remove os itens null
+  };
+
+  const TREE_ROW_ESTIMATE_PX = 40;
+  const TREE_VERTICAL_PADDING_PX = 24;
+  const TREE_MAX_VIEW_PX = 560;
+  const TREE_MIN_VIEW_PX = 72;
+
+  const countVisibleTreeRows = (items) => {
+    if (!items?.length) return 0;
+    let n = 0;
+    for (const item of items) {
+      if (item.type === 'categoria') {
+        n += 1;
+        if (item.children?.length) n += countVisibleTreeRows(item.children);
+      } else {
+        n += 1;
+      }
+    }
+    return n;
+  };
+
+  const getTreeBoxStyle = (items, searchTerm) => {
+    const filtered = filterTreeItems(items, searchTerm);
+    const rows = countVisibleTreeRows(filtered);
+    const contentHeight =
+      rows === 0
+        ? TREE_MIN_VIEW_PX
+        : rows * TREE_ROW_ESTIMATE_PX + TREE_VERTICAL_PADDING_PX;
+    const maxHeight = Math.min(TREE_MAX_VIEW_PX, Math.max(TREE_MIN_VIEW_PX, contentHeight));
+    return {
+      border: '1px solid #dee2e6',
+      borderRadius: '4px',
+      padding: '10px',
+      backgroundColor: '#f8f9fa',
+      maxHeight,
+      overflowY: contentHeight > TREE_MAX_VIEW_PX ? 'auto' : 'visible',
+    };
   };
 
   const renderTreeItems = (items, searchTerm) => {
@@ -1639,6 +1827,37 @@ function Laudos() {
     }
   };
 
+  const handleReiniciarModelo = async () => {
+    let tituloRecarregar = titulo;
+    if ((!tituloRecarregar || !String(tituloRecarregar).trim()) && modeloId != null) {
+      const m = titulosDisponiveis.find((item) => item.id === modeloId);
+      tituloRecarregar = m?.titulo;
+    }
+    if (!tituloRecarregar || !String(tituloRecarregar).trim()) {
+      alert('Selecione um modelo (título) antes de reiniciar.');
+      return;
+    }
+    const modeloExiste = titulosDisponiveis.some((item) => item.titulo === tituloRecarregar);
+    if (!modeloExiste) {
+      alert('Não foi possível encontrar o modelo na lista. Verifique o título ou os métodos selecionados.');
+      return;
+    }
+    if (
+      !window.confirm(
+        'Reiniciar o laudo com o texto original do modelo? As alterações atuais serão perdidas.'
+      )
+    ) {
+      return;
+    }
+
+    setModalVariaveisAberto(false);
+    localStorage.removeItem('variaveisSelecionadas');
+    setConclusaoDoModelo('');
+    setTexto('');
+
+    await handleTituloSelect(tituloRecarregar);
+  };
+
   const handleLimparTudo = () => {
     if (window.confirm('Tem certeza que deseja limpar todos os campos?')) {
       setMetodosModelo([]);
@@ -1647,6 +1866,57 @@ function Laudos() {
       setConclusaoDoModelo('');
       // Limpa o localStorage
       localStorage.removeItem('variaveisSelecionadas');
+    }
+  };
+  const handleCopiarHTMLdoLaudo= () => {
+    const editor = editorRef.current?.editor;
+    if (!editor) return;
+    const html = editor.getHTML();
+    navigator.clipboard.writeText(html);
+    alert('HTML do laudo copiado com sucesso!');
+  };
+
+  const handleCopiarHTMLLaudoUmParagrafo = async () => {
+    try {
+      const editor = editorRef.current?.editor;
+      if (!editor) return;
+
+      const textStyle = editor.getAttributes('textStyle') || {};
+      // Padrões alinhados ao TextEditor (TextStyle + FontSize): força global mesmo sem marca na seleção
+      const merged = mergeEditorHtmlToSingleParagraph(editor.getHTML(), {
+        fontFamily: textStyle.fontFamily || 'Arial',
+        fontSize: textStyle.fontSize || '12pt',
+      });
+      const htmlComCharset = `<meta charset="utf-8">${merged}`;
+      const plainDiv = document.createElement('div');
+      plainDiv.innerHTML = merged;
+      const plain = plainDiv.innerText || plainDiv.textContent || '';
+
+      let copiou = false;
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': new Blob([htmlComCharset], { type: 'text/html' }),
+              'text/plain': new Blob([plain], { type: 'text/plain' }),
+            }),
+          ]);
+          copiou = true;
+        } catch (e) {
+          console.warn('[Laudos] clipboard.write (HTML rico) falhou, usando writeText:', e);
+        }
+      }
+      if (!copiou && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(merged);
+        copiou = true;
+      }
+      if (!copiou) {
+        throw new Error('API de área de transferência indisponível (HTTPS ou permissão necessária).');
+      }
+      alert('HTML do laudo (um único parágrafo) copiado com sucesso!');
+    } catch (error) {
+      console.error('[Laudos] Erro ao copiar HTML (1 parágrafo / Copia Laudo 2):', error);
+      alert('Erro ao copiar o HTML. Por favor, tente novamente.');
     }
   };
 
@@ -1733,14 +2003,7 @@ function Laudos() {
                   onChange={(event) => setSearchModeloFrases(event.currentTarget.value)}
                   mb="sm"
                 />
-                <div style={{ 
-                  border: '1px solid #dee2e6', 
-                  borderRadius: '4px', 
-                  padding: '10px',
-                  backgroundColor: '#f8f9fa',
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}>
+                <div style={getTreeBoxStyle(treeDataModelo, searchModeloFrases)}>
                   {renderTreeItems(treeDataModelo, searchModeloFrases)}
                 </div>
                 <Text size="xs" lineClamp={2} c="dimmed" ta="left">
@@ -1778,14 +2041,7 @@ function Laudos() {
                   onChange={(event) => setSearchOutroModeloFrases(event.currentTarget.value)}
                   mb="sm"
                 />
-                <div style={{ 
-                  border: '1px solid #dee2e6', 
-                  borderRadius: '4px', 
-                  padding: '10px',
-                  backgroundColor: '#f8f9fa',
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}>
+                <div style={getTreeBoxStyle(treeDataOutroModelo, searchOutroModeloFrases)}>
                   {renderTreeItems(treeDataOutroModelo, searchOutroModeloFrases)}
                 </div>
               </>
@@ -1824,30 +2080,66 @@ function Laudos() {
             {/* Botões de ação do laudo */}
             <Group position="center" spacing="md">
               <Button
+                title="Copia o laudo com formatação para a área de transferência"
                 onClick={handleCopiarLaudo}
               >
                 Copia Laudo
               </Button>
+              <Button
+               // color="orange"
+                //variant="outline"
+                title="Copia o laudo para a área de transferência de outra forma, para melhor compatibilidade com alguns softwares"
+                onClick={handleCopiarHTMLLaudoUmParagrafo}
+              >
+                Copia Laudo 2
+              </Button>
 
               <Button
+                title="Copia o laudo sem formatação (texto puro, sem Negrito, tamanho de fonte, etc) para a área de transferência"
                 onClick={handleCopiarLaudoSemFormatacao}
               >
                 Copia Laudo sem formatação
               </Button>
 
               <Button
+                variant="outline"
+                color="blue"
+                title="Apaga o texto do editor e recarrega o conteúdo original do modelo selecionado"
+                onClick={handleReiniciarModelo}
+              >
+                Reiniciar modelo
+              </Button>
+
+              <Button
                 color="red"
+                title="Deleta o laudo atual"
                 onClick={handleDeleteLaudo}
               >
                 Deleta Laudo
               </Button>
 
+
+
               <Button
                 color="orange"
+                
                 onClick={handleLimparTudo}
               >
                 Limpa todos os campos
               </Button>
+              {/* <Button
+                color="orange"
+                onClick={handleCopiarHTMLdoLaudo}
+              >
+                Copiar HTML
+              </Button>
+              <Button
+                color="orange"
+                variant="outline"
+                onClick={handleCopiarHTMLLaudoUmParagrafo}
+              >
+                Copiar HTML (1 parágrafo)
+              </Button> */}
             </Group>
 
             <Tooltip label="Quando marcado, além de copiar o laudo, também será baixado um arquivo DOCX com o conteúdo formatado">
@@ -1871,6 +2163,7 @@ function Laudos() {
         onConfirm={handleVariaveisSelecionadas}
         tituloFrase={tituloFraseAtual}
         temMedida={fraseTemporaria?.frase?.fraseBase?.includes('$') || textoTemporario?.includes('$')}
+        textoPuro={textoPuroParaModal}
       />
 
       <InserirFraseModal
