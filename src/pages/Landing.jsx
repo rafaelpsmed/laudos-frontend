@@ -48,9 +48,9 @@ export default function Landing() {
           <Link className={styles.link} to="/login">
             Entrar
           </Link>
-          <Link className={styles.ctaPrimary} to="/register">
+          {/* <Link className={styles.ctaPrimary} to="/register">
             Criar conta
-          </Link>
+          </Link> */}
         </nav>
       </header>
 

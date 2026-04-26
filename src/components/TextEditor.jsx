@@ -259,9 +259,9 @@ const editorStyles = {
   },
 };
 
-const TextEditor = forwardRef(({ 
-  content, 
-  onChange, 
+const TextEditor = forwardRef(({
+  content,
+  onChange,
   label = "Editor de Texto",
   onSelectionUpdate,
   onCursorPositionChange,
@@ -270,6 +270,8 @@ const TextEditor = forwardRef(({
   aguardandoSelecao,
   aguardandoLinha,
   aguardandoPosicaoAtual,
+  // Propriedade para posicionar o cursor após setContent
+  cursorPosition,
   // Propriedades para auto-save
   enableAutoSave = true,
   autoSaveKey = 'textEditor_autoSave',
@@ -536,14 +538,15 @@ const TextEditor = forwardRef(({
       TextStyle.configure({
         types: ['textStyle'],
         defaultStyle: {
-          fontFamily: 'Arial'
+          fontFamily: 'Arial',
+          fontSize: '11pt'
         }
       }),
       FontFamily.configure({
         types: ['textStyle']
       }),
       FontSize.configure({
-        defaultSize: '12pt',
+        defaultSize: '11pt',
         step: 1
       }),
       TextAlign.configure({
@@ -883,19 +886,24 @@ const TextEditor = forwardRef(({
     // Se a mudança veio do próprio editor, não reaplica setContent (evita resetar o cursor)
     if (next === lastHtmlFromEditorRef.current) return;
     if (next !== editor.getHTML()) {
-      // Preserva seleção atual para evitar o cursor "pular pro fim" após setContent
-      const { from, to } = editor.state.selection;
-
       editor.commands.setContent(next);
 
-      // Restaura seleção (clamp para evitar posições inválidas se o conteúdo mudou)
-      const maxPos = editor.state.doc.content.size;
-      const safeFrom = Math.max(0, Math.min(from, maxPos));
-      const safeTo = Math.max(0, Math.min(to, maxPos));
-      editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
-      editor.commands.focus();
+      // Se cursorPosition for fornecido, posiciona o cursor lá
+      if (typeof cursorPosition === 'number') {
+        const maxPos = editor.state.doc.content.size;
+        const safePos = Math.max(0, Math.min(cursorPosition, maxPos));
+        editor.chain().focus().setTextSelection(safePos).run();
+      } else {
+        // Caso contrário, preserva seleção atual (comportamento padrão)
+        const { from, to } = editor.state.selection;
+        const maxPos = editor.state.doc.content.size;
+        const safeFrom = Math.max(0, Math.min(from, maxPos));
+        const safeTo = Math.max(0, Math.min(to, maxPos));
+        editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
+        editor.commands.focus();
+      }
     }
-  }, [content, editor]);
+  }, [content, editor, cursorPosition]);
 
   // Configuração do auto-save
   useEffect(() => {

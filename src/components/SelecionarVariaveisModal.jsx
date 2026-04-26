@@ -611,6 +611,8 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
       }
     });
 
+    // let tamanhoTextoResultado = resultado.length;
+    // console.log("Frase final: " + resultado.toString() + ", tamanho: " + tamanhoTextoResultado);
     onConfirm(resultado);
     onClose();
   };

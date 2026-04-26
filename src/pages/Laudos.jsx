@@ -141,10 +141,6 @@ function Laudos() {
   const [aguardandoLinha, setAguardandoLinha] = useState(false);
   const [aguardandoPosicaoAtual, setAguardandoPosicaoAtual] = useState(false);
   const [posicaoAtualCursor, setPosicaoAtualCursor] = useState(null);
-  // Marcador invisível para ancorar o cursor após substituir variáveis (frase sem conclusão)
-  const cursorAnchorTokenRef = useRef(null);
-  const cursorAnchorArmedRef = useRef(false);
-  const cursorAnchorRetriesRef = useRef(0);
   const editorRef = useRef(null);
   const [todasFrases, setTodasFrases] = useState([]);
   const [baixarDocx, setBaixarDocx] = useState(false);
@@ -156,6 +152,12 @@ function Laudos() {
   const [searchOutroModeloFrases, setSearchOutroModeloFrases] = useState('');
   const [cursorPosicao, setCursorPosicao] = useState(null);
   const [fraseBaseTamanho, setFraseBaseTamanho] = useState(null);
+  // Novo fluxo: posição onde a frase deve ser inserida após processamento das variáveis
+  const [posicaoInsercaoFrase, setPosicaoInsercaoFrase] = useState(null);
+  // Frase com variáveis (ainda não processada) esperando pelo modal
+  const [frasePendenteComVariaveis, setFrasePendenteComVariaveis] = useState(null);
+  const posicaoInsercaoFraseRef = useRef(null);
+  const frasePendenteComVariaveisRef = useRef(null);
 
   const handleMetodosModeloChange = (newValue) => {
     setMetodosModelo(newValue);
@@ -482,46 +484,6 @@ function Laudos() {
     return posEncontrada;
   };
 
-  // Quando o conteúdo do editor for atualizado após o modal de variáveis,
-  // remove o token-âncora e posiciona o cursor ali (apenas para frases sem conclusão).
-  useEffect(() => {
-    const token = cursorAnchorTokenRef.current;
-    if (!token) return;
-    if (!cursorAnchorArmedRef.current) return;
-
-    const editor = editorRef.current?.editor;
-    if (!editor) return;
-
-    const tryApply = () => {
-      const tokenAtual = cursorAnchorTokenRef.current;
-      if (!tokenAtual || !cursorAnchorArmedRef.current) return;
-      const ed = editorRef.current?.editor;
-      if (!ed) return;
-
-      const pos = encontrarPosicaoTextoNoDoc(ed.state.doc, tokenAtual);
-      if (typeof pos === 'number') {
-        ed.commands.setTextSelection(pos);
-        ed.commands.deleteRange({ from: pos, to: pos + tokenAtual.length });
-        ed.commands.focus();
-        cursorAnchorTokenRef.current = null;
-        cursorAnchorArmedRef.current = false;
-        cursorAnchorRetriesRef.current = 0;
-        return;
-      }
-
-      if (cursorAnchorRetriesRef.current < 30) {
-        cursorAnchorRetriesRef.current += 1;
-        setTimeout(tryApply, 0);
-      } else {
-        cursorAnchorTokenRef.current = null;
-        cursorAnchorArmedRef.current = false;
-        cursorAnchorRetriesRef.current = 0;
-      }
-    };
-
-    // dispara a tentativa (e retries) sempre que `texto` mudar
-    tryApply();
-  }, [texto]);
 
   const processarFrase = async (frase, tipoInsercao = null, elementoLinha = null, posicaoCursor = null) => {
     let novoTexto = texto;
@@ -556,24 +518,41 @@ function Laudos() {
     if (tipoInsercao) {
       // Se não tem substituição, insere baseado na escolha do usuário
       let fraseBase = converterQuebrasDeLinha(frase.frase.fraseBase || '');
-      
-      // Debug: verifica o formato da frase base que vem do backend
-      // console.log('🔍 Frase base do backend (primeiros 200 chars):', fraseBase.substring(0, 200));
-      // console.log('🔍 Contém {JSON} de variável local?', fraseBase.includes('"tipo":"variavelLocal"') || fraseBase.includes('"tipo":variavelLocal'));
-      // console.log('🔍 Contém [LOCAL:?', fraseBase.includes('[LOCAL:'));
-      
+
       try {
         // Aplica a formatação à frase base
-        const fraseBaseAntesFormatacao = fraseBase;
         fraseBase = aplicarFormatacao(fraseBase);
-        
-        // Debug: verifica o formato após formatação
-        // console.log('🔍 Frase base após formatação (primeiros 200 chars):', fraseBase.substring(0, 200));
-        // console.log('🔍 Contém [[LOCAL: após formatação?', fraseBase.includes('[[LOCAL:'));
-        // console.log('🔍 Contém [LOCAL: após formatação?', fraseBase.includes('[LOCAL:'));
 
-        // Guardamos onde começou a inserção e quanto o cursor andou no documento
-        // (isso é mais confiável do que usar fraseBase.length, que é string/HTML)
+        // Verifica se a frase formatada contém variáveis ANTES de inserir
+        const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } = await buscarVariaveisNoTexto(fraseBase, frase);
+        const temVariaveis = variaveis.length > 0 || gruposOpcoes.length > 0 || variaveisLocais.length > 0 || fraseBase.includes('$');
+
+        if (temVariaveis && editor) {
+          // NOVO FLUXO: Salva a frase com variáveis e a posição de inserção, mas NÃO insere ainda
+          // Usa posicaoAtualCursor que é mantido atualizado pelo onCursorPositionChange
+          const posicaoCursor = (typeof posicaoAtualCursor === 'number') ? posicaoAtualCursor : editor.state.selection.from;
+          const pendente = {
+            frase: frase,
+            fraseBaseFormatada: fraseBase,
+            tipoInsercao: tipoInsercao,
+            elementoLinha: elementoLinha,
+            posicaoCursor: posicaoCursor
+          };
+          setPosicaoInsercaoFrase(posicaoCursor);
+          posicaoInsercaoFraseRef.current = posicaoCursor;
+          setFrasePendenteComVariaveis(pendente);
+          frasePendenteComVariaveisRef.current = pendente;
+          setTextoTemporario(fraseBase);
+          setVariaveisEncontradas(variaveis);
+          setGruposOpcoesEncontrados(gruposOpcoes);
+          setElementosOrdenados(elementosOrdenados);
+          setTextoPuroParaModal(textoPuro);
+          setFraseTemporaria(frase);
+          setModalVariaveisAberto(true);
+          return; // Sai sem inserir - a inserção acontecerá após o modal
+        }
+
+        // Se não tem variáveis, insere normalmente (fluxo antigo)
         let posicaoInicialInsercao = null;
         let deltaInserido = null;
 
@@ -592,8 +571,11 @@ function Laudos() {
               const { from } = editor.state.selection;
               editor.commands.setTextSelection(from);
               posicaoInicialInsercao = editor.state.selection.from;
-              editor.commands.insertContent(fraseBase);
+              editor.commands.insertContentAt(from, fraseBase);
+              //editor.commands.insertContent(fraseBase);
+              console.log("texto que veio do modal de variáveis: " + fraseBase);
               deltaInserido = editor.state.selection.from - posicaoInicialInsercao;
+              editor.commands.focus(deltaInserido);
 
               
             }
@@ -783,66 +765,14 @@ function Laudos() {
         const maxPos = editor.state.doc.content.size;
         const safePos = Math.max(0, Math.min(cursorDesejado, maxPos));
         editor.chain().focus().setTextSelection(safePos).run();
+        editor.commands.focus(safePos);
       } else if (temConclusao) {
         editor.commands.setTextSelection(editor.state.doc.content.size);
       }
     }
 
-    // Procura por variáveis e grupos de opções no texto
-    const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } = await buscarVariaveisNoTexto(novoTexto, frase);
-    
-    // console.log('📊 Resultado da busca:');
-    // console.log('   Variáveis:', variaveis.length);
-    // console.log('   Grupos de opções:', gruposOpcoes.length);
-    // console.log('   Variáveis locais:', variaveisLocais.length);
-    // console.log('   Elementos ordenados:', elementosOrdenados.length);
-    
-    if (variaveisLocais.length > 0) {
-      // console.log('   📋 Detalhes das variáveis locais encontradas:');
-      variaveisLocais.forEach((vl, index) => {
-        // console.log(`      ${index + 1}. Título: ${vl.tituloVariavel}, Tipo: ${vl.variavel?.tipo}, Texto Original: ${vl.textoOriginal?.substring(0, 100)}`);
-      });
-    }
-    
-    // Se encontrou variáveis, grupos de opções, variáveis locais ou tem '$', guarda o texto temporariamente e abre o modal
-    if (variaveis.length > 0 || gruposOpcoes.length > 0 || variaveisLocais.length > 0 || novoTexto.includes('$')) {
-      // console.log('✅ Abrindo modal de variáveis');
-      if (variaveisLocais.length > 0) {
-        // console.log('   ✅ Variáveis locais detectadas - modal será aberto com opções para seleção');
-      }
-      // Caso desejado: frase com variáveis e SEM conclusão -> manter cursor no fim da frase inserida.
-      // Inserimos um marcador INVISÍVEL diretamente no documento do editor, no ponto do cursorDesejado.
-      // Ele viaja pelo texto temporário/modal e depois é removido e usado para posicionar o cursor.
-      const isFrase = !!fraseTemporaria;
-      if (isFrase && !temConclusao) {
-        const marker = '\u2063\u2060\u200B\u200C\u200D\u2063\u2060\u200B\u200C\u200D';
-        cursorAnchorTokenRef.current = marker;
-        cursorAnchorArmedRef.current = false; // arma só no confirm (handleVariaveisSelecionadas)
-        cursorAnchorRetriesRef.current = 0;
-
-        if (editor && typeof cursorDesejado === 'number') {
-          const maxPos = editor.state.doc.content.size;
-          const safePos = Math.max(0, Math.min(cursorDesejado, maxPos));
-          editor.commands.insertContentAt(safePos, marker);
-          novoTexto = editor.getHTML(); // inclui o marcador invisível no texto temporário
-        }
-      } else {
-        cursorAnchorTokenRef.current = null;
-        cursorAnchorArmedRef.current = false;
-        cursorAnchorRetriesRef.current = 0;
-      }
-
-      setTextoTemporario(novoTexto);
-      setVariaveisEncontradas(variaveis);
-      setGruposOpcoesEncontrados(gruposOpcoes);
-      setElementosOrdenados(elementosOrdenados);
-      setTextoPuroParaModal(textoPuro);
-      setFraseTemporaria(frase);
-      setModalVariaveisAberto(true);
-
-      
-    } else {
-      // Se não encontrou variáveis nem grupos de opções, atualiza o texto diretamente
+    // Atualiza o texto no estado (para frases sem variáveis ou fluxo antigo)
+    if (!frasePendenteComVariaveis) {
       setTexto(novoTexto);
     }
   };
@@ -1510,6 +1440,8 @@ function Laudos() {
       const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
       textoFinal = textoFinal.replace(regex, valor);
       // console.log(`✅ Substituição normal: {${chave}} -> ${valor}`);
+      console.log("match: " + valor + ", length: " + valor.length);
+      
     });
 
     // Processa variáveis por instância
@@ -1523,6 +1455,7 @@ function Laudos() {
         const valor = instancias[ocorrenciasEncontradas];
         // console.log(`🔄 Substituindo ocorrência ${ocorrenciasEncontradas} de {${tituloBase}}: ${match} -> ${valor}`);
         ocorrenciasEncontradas++;
+        
         return valor !== undefined ? valor : match;
       });
     });
@@ -1532,9 +1465,37 @@ function Laudos() {
     const fraseTemConclusao = !!fraseTemporaria?.frase?.conclusao;
     const isFrase = !!fraseTemporaria;
 
-    // Se é um modelo (fraseTemporaria é null), processa como modelo
-    if (!fraseTemporaria) {
-      // Procura por "impressão:" ou "conclusão:" no texto processado
+    // O novo fluxo precisa vir antes do teste "!fraseTemporaria":
+    // alguns caminhos limpam fraseTemporaria antes da confirmação do modal.
+    if (frasePendenteComVariaveisRef.current || frasePendenteComVariaveis) {
+      // NOVO FLUXO: Insere a frase processada no editor na posição salva
+      const editor = editorRef.current?.editor;
+      const posicaoInsercao = typeof posicaoInsercaoFraseRef.current === 'number'
+        ? posicaoInsercaoFraseRef.current
+        : posicaoInsercaoFrase;
+
+      if (editor && typeof posicaoInsercao === 'number') {
+        // Insere a frase processada na posição correta
+        editor.commands.setTextSelection(posicaoInsercao);
+        editor.commands.insertContent(textoFinal);
+
+        // Após insertContent, o TipTap deixa a seleção no fim do conteúdo inserido
+        const posicaoFinal = editor.state.selection.from;
+        const maxPos = editor.state.doc.content.size;
+        const safePos = Math.max(0, Math.min(posicaoFinal, maxPos));
+
+        // Posiciona o cursor no final da frase inserida
+        editor.chain().focus().setTextSelection(safePos).run();
+        setTexto(editor.getHTML());
+      }
+
+      // Limpa os estados do novo fluxo
+      setFrasePendenteComVariaveis(null);
+      frasePendenteComVariaveisRef.current = null;
+      setPosicaoInsercaoFrase(null);
+      posicaoInsercaoFraseRef.current = null;
+    } else if (!fraseTemporaria) {
+      // Se é um modelo (fraseTemporaria é null), processa como modelo
       const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
       const match = textoFinal.match(regex);
 
@@ -1549,17 +1510,13 @@ function Laudos() {
         setConclusaoDoModelo('');
       }
     } else {
-      // Se é uma frase, processa normalmente
-      // Caso desejado: frase com variáveis e SEM conclusão -> armar âncora para reposicionar cursor após setContent
-      if (isFrase && !fraseTemConclusao && cursorAnchorTokenRef.current) {
-        cursorAnchorArmedRef.current = true;
-      } else {
-        cursorAnchorArmedRef.current = false;
-      }
+      // FLUXO ANTIGO: Se é uma frase, processa normalmente
       setTexto(textoFinal);
     }
 
     setModalVariaveisAberto(false);
+    // Limpa a posição do cursor após usar (para não interferir em futuras atualizações)
+    setCursorPosicao(null);
   };
   
 
@@ -2067,6 +2024,7 @@ function Laudos() {
               onCursorPositionChange={(pos) => {
                 setPosicaoAtualCursor((prev) => (prev !== pos ? pos : prev));
               }}
+              cursorPosition={cursorPosicao}
               aguardandoClique={aguardandoClique}
               aguardandoSelecao={aguardandoSelecao}
               aguardandoLinha={aguardandoLinha}
