@@ -1,0 +1,139 @@
+// import { useState } from 'react'
+// import reactLogo from './assets/react.svg'
+// import viteLogo from '/vite.svg'
+// import './App.css'
+
+// function App() {
+//   const [count, setCount] = useState(0)
+
+//   return (
+//     <>
+//       <div>
+//         <a href="https://vite.dev" target="_blank">
+//           <img src={viteLogo} className="logo" alt="Vite logo" />
+//         </a>
+//         <a href="https://react.dev" target="_blank">
+//           <img src={reactLogo} className="logo react" alt="React logo" />
+//         </a>
+//       </div>
+//       <h1>Vite + React</h1>
+//       <div className="card">
+//         <button onClick={() => setCount((count) => count + 1)}>
+//           count is {count}
+//         </button>
+//         <p>
+//           Edit <code>src/App.jsx</code> and save to test HMR
+//         </p>
+//       </div>
+//       <p className="read-the-docs">
+//         Click on the Vite and React logos to learn more
+//       </p>
+//     </>
+//   )
+// }
+
+// export default App
+
+import react from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Login from './pages/Login';
+import Home from './pages/Home';
+import NotFound from './pages/NotFound';
+import Register from './pages/Register';
+import ProtectedRoute from './components/ProtectedRoutes';
+import '@mantine/core/styles.css';
+import { MantineProvider, localStorageColorSchemeManager } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
+
+// Páginas
+import ModeloLaudo from './pages/ModeloLaudo';
+import Frases from './pages/Frases';
+import Variaveis from './pages/Variaveis';
+import Laudos from './pages/Laudos';
+import IA from './pages/IA';
+import TransferirFrases from './pages/TransferirFrases';
+import Landing from './pages/Landing';
+import { useAuth } from './contexts/AuthContext';
+
+// Estilos
+import '@mantine/tiptap/styles.css';
+import '@mantine/notifications/styles.css';
+
+const colorSchemeManager = localStorageColorSchemeManager({
+  key: 'laudos-mantine-color-scheme',
+});
+
+function Logout() {
+  localStorage.clear();
+  return <Navigate to="/login" />;
+}
+
+function RegisterAndLogout() {
+  localStorage.clear();
+  return <Register />;
+}
+
+function RootLanding() {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? (
+    <ProtectedRoute>
+      <Home />
+    </ProtectedRoute>
+  ) : (
+    <Landing />
+  );
+}
+
+function App() {
+  return (
+    <MantineProvider defaultColorScheme="auto" colorSchemeManager={colorSchemeManager}>
+      <Notifications />
+      <Routes>
+        <Route path="/" element={<RootLanding />} />
+
+        <Route path="/modelos" element={
+          <ProtectedRoute>
+            <ModeloLaudo />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/frases" element={
+          <ProtectedRoute>
+            <Frases />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/variaveis" element={
+          <ProtectedRoute>
+            <Variaveis />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/laudos" element={
+          <ProtectedRoute>
+            <Laudos />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/ia" element={
+          <ProtectedRoute>
+            <IA />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/transferir-frases" element={
+          <ProtectedRoute>
+            <TransferirFrases />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/login" element={<Login />} />
+        <Route path="/logout" element={<Logout />} />
+        <Route path="/register" element={<RegisterAndLogout />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </MantineProvider>
+  );
+}
+
+export default App;
