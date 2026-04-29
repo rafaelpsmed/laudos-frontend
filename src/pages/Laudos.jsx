@@ -435,9 +435,27 @@ function Laudos() {
     const normalized = textoComQuebraReal.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const linhas = normalized.split('\n');
 
+   // if (linhas.length <= 1) {
+     // const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
+      //return conteudoHtml.replace(procurarPor, substituirHtml);
+    // }
+
+    // CORREÇÃO (funciona com ou sem formatação):
     if (linhas.length <= 1) {
-      const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
-      return conteudoHtml.replace(procurarPor, substituirHtml);
+      // Cria regex que permite tags HTML opcionais entre cada palavra/caractere
+      const escaped = escapeRegex(procurarTextoPlain);
+      // Permite: zero ou mais tags HTML (abertura/fechamento) seguidas de espaços opcionais
+      const comTagsOpcionais = escaped.replace(/(\S)(\S)/g, '$1(?:<[^>]+>)*\\s*(?:<[^>]+>)*$2');
+      const comTagsOpcionaisFinal = comTagsOpcionais.replace(/(\S)(\S)/g, '$1(?:<[^>]+>)*\\s*(?:<[^>]+>)*$2');
+      
+      try {
+        const regex = new RegExp(comTagsOpcionaisFinal);
+        return conteudoHtml.replace(regex, substituirHtml);
+      } catch {
+        // Fallback para o comportamento antigo
+        const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
+        return conteudoHtml.replace(procurarPor, substituirHtml);
+      }
     }
 
     const escapedParts = linhas.map((line) => escapeRegex(line));
