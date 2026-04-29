@@ -1,6 +1,6 @@
 import Layout from '../components/Layout';
 import { Divider, Stack, Grid, Text, NavLink, Tooltip, Group, Button, Checkbox, TextInput } from '@mantine/core';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import TextEditor from '../components/TextEditor';
 import MetodosSelect from '../components/MetodosSelect';
 import TituloCombobox from '../components/TituloCombobox';
