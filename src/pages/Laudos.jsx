@@ -159,6 +159,25 @@ function Laudos() {
   const posicaoInsercaoFraseRef = useRef(null);
   const frasePendenteComVariaveisRef = useRef(null);
 
+  const aplicarFormatacao = useCallback((conteudo, editor = editorRef.current?.editor) => {
+    if (!editor) return conteudo;
+
+    // Obtém a formatação atual do editor
+    const formataçãoAtual = editor.getAttributes('textStyle');
+    // const fonteAtual = formataçãoAtual.fontFamily || 'Arial';
+    // const tamanhoAtual = formataçãoAtual.fontSize || '12pt';
+    const fonteAtual = formataçãoAtual.fontFamily;
+    const tamanhoAtual = formataçãoAtual.fontSize;
+
+    // Aplica a formatação ao texto usando o TextStyle
+    editor.chain().focus().setMark('textStyle', {
+      fontFamily: fonteAtual,
+      fontSize: tamanhoAtual
+    }).run();
+
+    return `<span style="font-family: ${fonteAtual}; font-size: ${tamanhoAtual}">${conteudo}</span>`;
+  }, []);
+
   const handleMetodosModeloChange = (newValue) => {
     setMetodosModelo(newValue);
     setTitulo('');
@@ -526,26 +545,6 @@ function Laudos() {
     // Atualiza o título da frase atual
     setTituloFraseAtual(frase.tituloFrase);
     setFraseBaseTamanho(frase.frase.fraseBase.length);
-    // Função auxiliar para aplicar formatação ao texto
-    const aplicarFormatacao = (texto) => {
-      if (!editor) return texto;
-      
-      // Obtém a formatação atual do editor
-      const formataçãoAtual = editor.getAttributes('textStyle');
-      // const fonteAtual = formataçãoAtual.fontFamily || 'Arial';
-      // const tamanhoAtual = formataçãoAtual.fontSize || '12pt';
-      const fonteAtual = formataçãoAtual.fontFamily;
-      const tamanhoAtual = formataçãoAtual.fontSize;
-      
-      // Aplica a formatação ao texto usando o TextStyle
-      editor.chain().focus().setMark('textStyle', { 
-        fontFamily: fonteAtual,
-        fontSize: tamanhoAtual
-      }).run();
-      
-      return `<span style="font-family: ${fonteAtual}; font-size: ${tamanhoAtual}">${texto}</span>`;
-    };
-
     if (tipoInsercao) {
       // Se não tem substituição, insere baseado na escolha do usuário
       let fraseBase = converterQuebrasDeLinha(frase.frase.fraseBase || '');
