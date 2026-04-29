@@ -435,26 +435,39 @@ function Laudos() {
     const normalized = textoComQuebraReal.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const linhas = normalized.split('\n');
 
-   // if (linhas.length <= 1) {
-     // const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
-      //return conteudoHtml.replace(procurarPor, substituirHtml);
-    // }
-
-    // CORREÇÃO (funciona com ou sem formatação):
     if (linhas.length <= 1) {
-      // Cria regex que permite tags HTML opcionais entre cada palavra/caractere
-      const escaped = escapeRegex(procurarTextoPlain);
-      // Permite: zero ou mais tags HTML (abertura/fechamento) seguidas de espaços opcionais
-      const comTagsOpcionais = escaped.replace(/(\S)(\S)/g, '$1(?:<[^>]+>)*\\s*(?:<[^>]+>)*$2');
-      const comTagsOpcionaisFinal = comTagsOpcionais.replace(/(\S)(\S)/g, '$1(?:<[^>]+>)*\\s*(?:<[^>]+>)*$2');
-      
+      // CORREÇÃO: Cria regex que permite tags HTML opcionais entre palavras
+      // Divide o texto em palavras e espaços, permitindo tags entre eles
+      const partes = procurarTextoPlain.split(/(\s+)/); // Mantém os espaços como elementos separados
+      const pattern = partes.map(parte => {
+        if (parte.trim() === '') {
+          // É espaço/whitespace — permite tags HTML opcionais ao redor do espaço
+          // Isso cobre casos como: "</span> <span>" ou "<br>" etc.
+          return '(?:\\s|&nbsp;|<[^>]+>)*';
+        } else {
+          // É palavra — escapa caracteres especiais
+          // E permite tags HTML opcionais depois da palavra
+          return escapeRegex(parte);
+        }
+      }).join('(?:\\s|&nbsp;|<[^>]+>)*'); // Junta tudo permitindo tags/quebras entre as partes
+
       try {
-        const regex = new RegExp(comTagsOpcionaisFinal);
-        return conteudoHtml.replace(regex, substituirHtml);
+        const regex = new RegExp(pattern);
+        const resultado = conteudoHtml.replace(regex, substituirHtml);
+        // Se a regex funcionou, retorna; senão tenta fallback
+        if (resultado !== conteudoHtml || conteudoHtml.match(pattern)) {
+          return resultado;
+        }
+        throw new Error('Regex não encontrou match');
       } catch {
-        // Fallback para o comportamento antigo
+        // Fallback 1: tenta replace simples
         const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
-        return conteudoHtml.replace(procurarPor, substituirHtml);
+        const resultadoSimples = conteudoHtml.replace(procurarPor, substituirHtml);
+        if (resultadoSimples !== conteudoHtml) {
+          return resultadoSimples;
+        }
+        // Fallback 2: último recurso — retorna original
+        return conteudoHtml;
       }
     }
 
