@@ -1479,6 +1479,21 @@ function Laudos() {
         editor.commands.setTextSelection(posicaoInsercao);
         editor.commands.insertContent(textoFinal);
 
+        // Processa as outras substituições após inserir a frase base
+        const fraseAtual = frasePendenteComVariaveisRef.current?.frase || frasePendenteComVariaveis?.frase;
+        if (fraseAtual?.frase?.substituicoesOutras && fraseAtual.frase.substituicoesOutras.length > 0) {
+          let conteudoAtual = editor.getHTML();
+          fraseAtual.frase.substituicoesOutras.forEach(substituicao => {
+            const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
+            conteudoAtual = substituirPrimeiraOcorrenciaOutras(
+              conteudoAtual,
+              substituicao.procurarPor,
+              substituirPor
+            );
+          });
+          editor.commands.setContent(conteudoAtual);
+        }
+
         // Após insertContent, o TipTap deixa a seleção no fim do conteúdo inserido
         const posicaoFinal = editor.state.selection.from;
         const maxPos = editor.state.doc.content.size;
@@ -1842,7 +1857,7 @@ function Laudos() {
       // Padrões alinhados ao TextEditor (TextStyle + FontSize): força global mesmo sem marca na seleção
       const merged = mergeEditorHtmlToSingleParagraph(editor.getHTML(), {
         fontFamily: textStyle.fontFamily || 'Arial',
-        fontSize: textStyle.fontSize || '12pt',
+        fontSize: textStyle.fontSize || '11pt',
       });
       const htmlComCharset = `<meta charset="utf-8">${merged}`;
       const plainDiv = document.createElement('div');
