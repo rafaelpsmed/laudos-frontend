@@ -469,12 +469,17 @@ const TextEditor = forwardRef(({
                     // Se foi uma inserção de texto
                     if (step.slice) { 
                       step.getMap().forEach((oldStart, oldEnd, newStart, newEnd) => {
-                        // Pega o texto ao redor da inserção
-                        const $pos = newState.doc.resolve(newStart);
-                        
+                        // Ignora deleções/reversões do histórico. Aqui só interessa texto recém-inserido.
+                        if (newEnd <= newStart) return;
+
+                        const docSize = newState.doc.content.size;
+                        const safeStart = Math.max(0, Math.min(newStart, docSize));
+                        const safeEnd = Math.max(0, Math.min(newEnd, docSize));
+                        if (safeEnd <= safeStart) return;
+
                         // Verifica o caractere anterior e o antepenúltimo (para ver se é ". ")
-                        const textBefore = newState.doc.textBetween(Math.max(0, newStart - 2), newStart, '\n', '\0');
-                        const charInserted = newState.doc.textBetween(newStart, newEnd, '\n', '\0');
+                        const textBefore = newState.doc.textBetween(Math.max(0, safeStart - 2), safeStart, '\n', '\0');
+                        const charInserted = newState.doc.textBetween(safeStart, safeEnd, '\n', '\0');
 
                         // Se inseriu uma letra minúscula e antes tinha ". " ou "? " ou "! "
                         if (
@@ -482,7 +487,7 @@ const TextEditor = forwardRef(({
                           /[a-z]/.test(charInserted) && 
                           /[.?!]\s$/.test(textBefore)
                         ) {
-                          tr.insertText(charInserted.toUpperCase(), newStart, newEnd);
+                          tr.insertText(charInserted.toUpperCase(), safeStart, safeEnd);
                           modified = true;
                         }
                       });

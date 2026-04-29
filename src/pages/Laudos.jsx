@@ -442,6 +442,14 @@ function Laudos() {
   /** Escapa texto para uso literal em RegExp. */
   const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+  const capitalizarInicioDaFrase = (conteudo) => {
+    if (!conteudo) return conteudo;
+
+    return conteudo.replace(/^((?:\s|<[^>]+>)*(?:-\s*)?)([a-záàâãéêíóôõúç])/i, (match, prefixo, letra) => {
+      return `${prefixo}${letra.toUpperCase()}`;
+    });
+  };
+
   /**
    * Substitui a primeira ocorrência de "procurar" no HTML do editor.
    * Com uma linha, mantém o comportamento antigo (string + converterQuebrasDeLinha).
@@ -1489,6 +1497,8 @@ function Laudos() {
         return valor !== undefined ? valor : match;
       });
     });
+
+    textoFinal = capitalizarInicioDaFrase(textoFinal);
 
     // console.log('📝 Texto final:', textoFinal);
 
