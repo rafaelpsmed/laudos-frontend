@@ -436,37 +436,37 @@ function Laudos() {
     const linhas = normalized.split('\n');
 
     if (linhas.length <= 1) {
-      // CORREÇÃO: Cria regex que permite tags HTML opcionais entre palavras
-      // Divide o texto em palavras e espaços, permitindo tags entre eles
-      const partes = procurarTextoPlain.split(/(\s+)/); // Mantém os espaços como elementos separados
-      const pattern = partes.map(parte => {
-        if (parte.trim() === '') {
-          // É espaço/whitespace — permite tags HTML opcionais ao redor do espaço
-          // Isso cobre casos como: "</span> <span>" ou "<br>" etc.
-          return '(?:\\s|&nbsp;|<[^>]+>)*';
-        } else {
-          // É palavra — escapa caracteres especiais
-          // E permite tags HTML opcionais depois da palavra
-          return escapeRegex(parte);
-        }
-      }).join('(?:\\s|&nbsp;|<[^>]+>)*'); // Junta tudo permitindo tags/quebras entre as partes
+      // SOLUÇÃO HÍBRIDA: Tenta replace simples primeiro, se falhar tenta com regex flexível
+      const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
+      const resultadoSimples = conteudoHtml.replace(procurarPor, substituirHtml);
 
+      // Se o replace simples funcionou (conteúdo mudou), retorna o resultado
+      if (resultadoSimples !== conteudoHtml) {
+        return resultadoSimples;
+      }
+
+      // Se não funcionou, tenta com regex que permite tags HTML entre as palavras
+      // Isso é necessário quando o texto no editor tem formatação (<span style="...">)
       try {
+        // Divide em palavras mantendo espaços
+        const partes = procurarTextoPlain.split(/(\s+)/);
+        const pattern = partes.map(parte => {
+          if (parte.trim() === '') {
+            // Espaços: permitem &nbsp; e tags HTML opcionais
+            return '(?:\\s|&nbsp;|<[^>]+>)*';
+          } else {
+            // Palavra: escapa e permite tags opcionais depois
+            return escapeRegex(parte);
+          }
+        }).join('(?:\\s|&nbsp;|<[^>]+>)*');
+
         const regex = new RegExp(pattern);
-        const resultado = conteudoHtml.replace(regex, substituirHtml);
-        // Se a regex funcionou, retorna; senão tenta fallback
-        if (resultado !== conteudoHtml || conteudoHtml.match(pattern)) {
-          return resultado;
-        }
-        throw new Error('Regex não encontrou match');
+        const resultadoRegex = conteudoHtml.replace(regex, substituirHtml);
+
+        // Se funcionou, retorna; senão retorna o original
+        return resultadoRegex !== conteudoHtml ? resultadoRegex : conteudoHtml;
       } catch {
-        // Fallback 1: tenta replace simples
-        const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
-        const resultadoSimples = conteudoHtml.replace(procurarPor, substituirHtml);
-        if (resultadoSimples !== conteudoHtml) {
-          return resultadoSimples;
-        }
-        // Fallback 2: último recurso — retorna original
+        // Se regex falhar, retorna o conteúdo original (sem alterações)
         return conteudoHtml;
       }
     }
