@@ -542,6 +542,46 @@ function Laudos() {
     return posEncontrada;
   };
 
+  /** Separador invisível entre trechos (base, substituições outras, conclusão) no modal de variáveis. */
+  const SEP_SEGMENTO_VARIAVEIS = '\uE000';
+
+  /**
+   * Une frase base, cada substituição "outra" e a conclusão num único texto para detectar
+   * e resolver variáveis de uma vez; após o modal o texto é repartido pelo mesmo separador.
+   */
+  const montarTextoCompostoParaVariaveisDaFrase = async (frase) => {
+    const blocos = [];
+
+    const addBloco = (raw) => {
+      blocos.push(aplicarFormatacao(converterQuebrasDeLinha(raw ?? '')));
+    };
+
+    addBloco(frase.frase.fraseBase);
+    if (frase.frase.substituicoesOutras?.length) {
+      frase.frase.substituicoesOutras.forEach((sub) => {
+        addBloco(sub.substituirPor);
+      });
+    }
+    if (frase.frase.conclusao) {
+      addBloco(frase.frase.conclusao);
+    }
+
+    const textoComposto = blocos.join(SEP_SEGMENTO_VARIAVEIS);
+    const resultado = await buscarVariaveisNoTexto(textoComposto, frase);
+    const temVariaveis =
+      resultado.variaveis.length > 0 ||
+      resultado.gruposOpcoes.length > 0 ||
+      resultado.variaveisLocais.length > 0 ||
+      textoComposto.includes('$');
+
+    return {
+      textoComposto,
+      resultado,
+      temVariaveis,
+      nSegmentos: blocos.length,
+      sep: SEP_SEGMENTO_VARIAVEIS,
+    };
+  };
 
   const processarFrase = async (frase, tipoInsercao = null, elementoLinha = null, posicaoCursor = null) => {
     let novoTexto = texto;
@@ -561,9 +601,17 @@ function Laudos() {
         // Aplica a formatação à frase base
         fraseBase = aplicarFormatacao(fraseBase);
 
-        // Verifica se a frase formatada contém variáveis ANTES de inserir
-        const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } = await buscarVariaveisNoTexto(fraseBase, frase);
-        const temVariaveis = variaveis.length > 0 || gruposOpcoes.length > 0 || variaveisLocais.length > 0 || fraseBase.includes('$');
+        // Variáveis em toda a frase (base, substituições outras, conclusão) num único passo
+        const {
+          textoComposto,
+          resultado,
+          temVariaveis: temVariaveisComposto,
+          nSegmentos,
+          sep: sepSegmentos,
+        } = await montarTextoCompostoParaVariaveisDaFrase(frase);
+        const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } =
+          resultado;
+        const temVariaveis = temVariaveisComposto;
 
         if (temVariaveis && editor) {
           // NOVO FLUXO: Salva a frase com variáveis e a posição de inserção, mas NÃO insere ainda
@@ -574,13 +622,14 @@ function Laudos() {
             fraseBaseFormatada: fraseBase,
             tipoInsercao: tipoInsercao,
             elementoLinha: elementoLinha,
-            posicaoCursor: posicaoCursor
+            posicaoCursor: posicaoCursor,
+            segmentacaoVariaveis: { sep: sepSegmentos, n: nSegmentos },
           };
           setPosicaoInsercaoFrase(posicaoCursor);
           posicaoInsercaoFraseRef.current = posicaoCursor;
           setFrasePendenteComVariaveis(pendente);
           frasePendenteComVariaveisRef.current = pendente;
-          setTextoTemporario(fraseBase);
+          setTextoTemporario(textoComposto);
           setVariaveisEncontradas(variaveis);
           setGruposOpcoesEncontrados(gruposOpcoes);
           setElementosOrdenados(elementosOrdenados);
@@ -701,9 +750,50 @@ function Laudos() {
         // console.error('Erro ao inserir texto:', error);
       }
     } else {
-      // Fluxo normal para frases com substituição
+      // Fluxo normal para frases com substituição (substituicaoFraseBase no laudo)
       if (editor) {
         try {
+          let fraseBase = converterQuebrasDeLinha(frase.frase.fraseBase || '');
+          fraseBase = aplicarFormatacao(fraseBase);
+
+          const {
+            textoComposto,
+            resultado,
+            temVariaveis: temVariaveisComposto,
+            nSegmentos,
+            sep: sepSegmentos,
+          } = await montarTextoCompostoParaVariaveisDaFrase(frase);
+          const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } =
+            resultado;
+          const temVariaveis = temVariaveisComposto;
+
+          if (temVariaveis) {
+            setTextoTemporario(textoComposto);
+            setVariaveisEncontradas(variaveis);
+            setGruposOpcoesEncontrados(gruposOpcoes);
+            setElementosOrdenados(elementosOrdenados);
+            setTextoPuroParaModal(textoPuro);
+            setFraseTemporaria(frase);
+            setTituloFraseAtual(frase.tituloFrase);
+            setFraseBaseTamanho(frase.frase.fraseBase.length);
+            setFrasePendenteComVariaveis({
+              frase,
+              fraseBaseFormatada: fraseBase,
+              modoSubstituicao: true,
+              segmentacaoVariaveis: { sep: sepSegmentos, n: nSegmentos },
+            });
+            frasePendenteComVariaveisRef.current = {
+              frase,
+              fraseBaseFormatada: fraseBase,
+              modoSubstituicao: true,
+              segmentacaoVariaveis: { sep: sepSegmentos, n: nSegmentos },
+            };
+            setPosicaoInsercaoFrase(null);
+            posicaoInsercaoFraseRef.current = null;
+            setModalVariaveisAberto(true);
+            return;
+          }
+
           let conteudoAtual = editor.getHTML();
           let novoConteudo = conteudoAtual;
           // Mantém o cursor onde estava antes de substituir conteúdo
@@ -1077,10 +1167,15 @@ function Laudos() {
       if (!encontrouVariavelLocal) {
         // PRIMEIRO: Se temos a frase passada como parâmetro, busca diretamente na frase base original
         // Isso é mais confiável do que tentar extrair do HTML
-        if (frase && frase.frase && frase.frase.fraseBase) {
-          // console.log('🔍 Buscando variáveis locais diretamente na frase base original do backend...');
-          const fraseBaseOriginal = frase.frase.fraseBase;
-          
+        if (frase && frase.frase) {
+          const partesOrigemVariavelLocal = [
+            frase.frase.fraseBase,
+            frase.frase.conclusao,
+            ...(frase.frase.substituicoesOutras?.map((s) => s.substituirPor) || []),
+          ].filter((x) => x != null && String(x) !== '');
+          const fraseBaseOriginal = partesOrigemVariavelLocal.join('\n');
+
+          if (fraseBaseOriginal) {
           // Busca variáveis locais no formato {JSON} na frase original
           let posicaoBuscaOriginal = 0;
           
@@ -1182,6 +1277,7 @@ function Laudos() {
               break;
             }
           }
+          }
         }
         
         // SEGUNDO: Se ainda não encontrou, tenta detectar padrões [LOCAL: Título] no texto puro
@@ -1212,13 +1308,32 @@ function Laudos() {
               // Se temos a frase passada como parâmetro, busca diretamente
               if (frase && frase.id) {
                 const fraseResponse = await api.get(`/api/frases/${frase.id}/`);
-                fraseBaseOriginal = fraseResponse.data.frase?.fraseBase || '';
+                const fd = fraseResponse.data.frase;
+                fraseBaseOriginal = [
+                  fd?.fraseBase,
+                  fd?.conclusao,
+                  ...(fd?.substituicoesOutras?.map((s) => s.substituirPor) || []),
+                ]
+                  .filter((x) => x != null && String(x) !== '')
+                  .join('\n');
               } else {
                 // Se não temos frase, busca todas as frases e tenta encontrar
                 const todasFrasesResponse = await api.get('/api/frases/');
                 for (const fraseItem of todasFrasesResponse.data) {
-                  if (fraseItem.frase?.fraseBase?.includes('"tipo":"variavelLocal"') || fraseItem.frase?.fraseBase?.includes('"tipo":variavelLocal')) {
-                    fraseBaseOriginal = fraseItem.frase.fraseBase;
+                  const f = fraseItem.frase;
+                  if (!f) continue;
+                  const blob = [
+                    f.fraseBase,
+                    f.conclusao,
+                    ...(f.substituicoesOutras?.map((s) => s.substituirPor) || []),
+                  ]
+                    .filter((x) => x != null && String(x) !== '')
+                    .join('\n');
+                  if (
+                    blob.includes('"tipo":"variavelLocal"') ||
+                    blob.includes('"tipo":variavelLocal')
+                  ) {
+                    fraseBaseOriginal = blob;
                     break;
                   }
                 }
@@ -1498,7 +1613,37 @@ function Laudos() {
       });
     });
 
-    textoFinal = capitalizarInicioDaFrase(textoFinal);
+    const pendenteVar =
+      frasePendenteComVariaveisRef.current || frasePendenteComVariaveis;
+    const segInfo = pendenteVar?.segmentacaoVariaveis;
+
+    let partesResolvidas = null;
+    if (segInfo) {
+      const { sep, n } = segInfo;
+      let partes = textoFinal.split(sep);
+      while (partes.length < n) partes.push('');
+      if (partes.length > n) {
+        partes = [
+          ...partes.slice(0, n - 1),
+          partes.slice(n - 1).join(sep),
+        ];
+      }
+      partesResolvidas = partes.map((p) => capitalizarInicioDaFrase(p));
+    } else {
+      textoFinal = capitalizarInicioDaFrase(textoFinal);
+    }
+
+    const unpackPartesNaFrase = (fraseAtual, partes) => {
+      const nSub = fraseAtual.frase.substituicoesOutras?.length ?? 0;
+      const temConc = !!fraseAtual.frase.conclusao;
+      const base = partes[0] ?? '';
+      const subs = [];
+      for (let i = 0; i < nSub; i++) {
+        subs.push(partes[1 + i] ?? '');
+      }
+      const conclusaoResolvida = temConc ? (partes[1 + nSub] ?? '') : '';
+      return { base, subs, conclusaoResolvida, temConc };
+    };
 
     // console.log('📝 Texto final:', textoFinal);
 
@@ -1508,40 +1653,221 @@ function Laudos() {
     // O novo fluxo precisa vir antes do teste "!fraseTemporaria":
     // alguns caminhos limpam fraseTemporaria antes da confirmação do modal.
     if (frasePendenteComVariaveisRef.current || frasePendenteComVariaveis) {
-      // NOVO FLUXO: Insere a frase processada no editor na posição salva
+      const pendente =
+        frasePendenteComVariaveisRef.current || frasePendenteComVariaveis;
       const editor = editorRef.current?.editor;
-      const posicaoInsercao = typeof posicaoInsercaoFraseRef.current === 'number'
-        ? posicaoInsercaoFraseRef.current
-        : posicaoInsercaoFrase;
+      const fraseAtual = pendente?.frase;
 
-      if (editor && typeof posicaoInsercao === 'number') {
-        // Insere a frase processada na posição correta
-        editor.commands.setTextSelection(posicaoInsercao);
-        editor.commands.insertContent(textoFinal);
+      if (pendente?.modoSubstituicao && editor && fraseAtual?.frase) {
+        const cursorDesejado = editor.state.selection.from;
+        const temConclusao = !!fraseAtual.frase.conclusao;
 
-        // Processa as outras substituições após inserir a frase base
-        const fraseAtual = frasePendenteComVariaveisRef.current?.frase || frasePendenteComVariaveis?.frase;
-        if (fraseAtual?.frase?.substituicoesOutras && fraseAtual.frase.substituicoesOutras.length > 0) {
-          let conteudoAtual = editor.getHTML();
-          fraseAtual.frase.substituicoesOutras.forEach(substituicao => {
-            const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
-            conteudoAtual = substituirPrimeiraOcorrenciaOutras(
-              conteudoAtual,
+        const segResolvido = partesResolvidas
+          ? unpackPartesNaFrase(fraseAtual, partesResolvidas)
+          : {
+              base: textoFinal,
+              subs: null,
+              conclusaoResolvida: null,
+              temConc: !!fraseAtual.frase.conclusao,
+            };
+        const { base: textoBaseSubst, subs: subsRes, conclusaoResolvida } = segResolvido;
+
+        let conteudoAtual = editor.getHTML();
+        let novoConteudo = conteudoAtual;
+
+        if (fraseAtual.frase.substituicaoFraseBase && fraseAtual.frase.fraseBase) {
+          novoConteudo = conteudoAtual.replace(
+            fraseAtual.frase.substituicaoFraseBase,
+            textoBaseSubst
+          );
+        }
+
+        if (
+          fraseAtual.frase.substituicoesOutras &&
+          fraseAtual.frase.substituicoesOutras.length > 0
+        ) {
+          fraseAtual.frase.substituicoesOutras.forEach((substituicao, idx) => {
+            const substituirPor =
+              subsRes && subsRes[idx] !== undefined
+                ? subsRes[idx]
+                : aplicarFormatacao(
+                    converterQuebrasDeLinha(substituicao.substituirPor)
+                  );
+            novoConteudo = substituirPrimeiraOcorrenciaOutras(
+              novoConteudo,
               substituicao.procurarPor,
               substituirPor
             );
           });
-          editor.commands.setContent(conteudoAtual);
         }
 
-        // Após insertContent, o TipTap deixa a seleção no fim do conteúdo inserido
-        const posicaoFinal = editor.state.selection.from;
-        const maxPos = editor.state.doc.content.size;
-        const safePos = Math.max(0, Math.min(posicaoFinal, maxPos));
+        if (novoConteudo !== conteudoAtual) {
+          editor.commands.setContent(novoConteudo);
+        }
 
-        // Posiciona o cursor no final da frase inserida
-        editor.chain().focus().setTextSelection(safePos).run();
-        setTexto(editor.getHTML());
+        let novoTexto = editor.getHTML();
+
+        if (fraseAtual.frase.conclusao) {
+          try {
+            const conclusaoFormatada =
+              partesResolvidas != null &&
+              conclusaoResolvida != null &&
+              conclusaoResolvida !== ''
+                ? conclusaoResolvida
+                : aplicarFormatacao(fraseAtual.frase.conclusao);
+
+            if (conclusaoDoModelo) {
+              const htmlAtual = editor.getHTML();
+              const comConclusao = htmlAtual.replace(
+                conclusaoDoModelo,
+                '<br>' + conclusaoFormatada
+              );
+              editor.commands.setContent(comConclusao);
+              setConclusaoDoModelo('');
+            } else {
+              const textoAtualPlain = novoTexto.replace(/<[^>]*>/g, '');
+              const textoConclusao = conclusaoFormatada.replace(/<[^>]*>/g, '');
+              const conclusaoPluralizada = pluralize(textoConclusao);
+              const conclusaoExisteSingular = textoAtualPlain.includes(textoConclusao);
+              const conclusaoExistePlural = textoAtualPlain.includes(conclusaoPluralizada);
+
+              if (!conclusaoExisteSingular && !conclusaoExistePlural) {
+                const posFinalDoc = editor.state.doc.content.size;
+                editor.commands.insertContentAt(
+                  posFinalDoc,
+                  '<br>' + conclusaoFormatada
+                );
+              } else if (conclusaoExisteSingular && !conclusaoExistePlural) {
+                const conclusaoPluralizadaFormatada = aplicarFormatacao(
+                  conclusaoPluralizada
+                );
+                const comPlural = novoTexto.replace(
+                  textoConclusao,
+                  conclusaoPluralizadaFormatada
+                );
+                editor.commands.setContent(comPlural);
+              }
+            }
+
+            novoTexto = editor.getHTML();
+          } catch {
+            /* noop */
+          }
+        }
+
+        if (!temConclusao && typeof cursorDesejado === 'number') {
+          const maxPos = editor.state.doc.content.size;
+          const safePos = Math.max(0, Math.min(cursorDesejado, maxPos));
+          editor.chain().focus().setTextSelection(safePos).run();
+          editor.commands.focus(safePos);
+        } else if (temConclusao) {
+          editor.commands.setTextSelection(editor.state.doc.content.size);
+        }
+
+        setTexto(novoTexto);
+      } else {
+        const posicaoInsercao =
+          typeof posicaoInsercaoFraseRef.current === 'number'
+            ? posicaoInsercaoFraseRef.current
+            : posicaoInsercaoFrase;
+
+        if (editor && typeof posicaoInsercao === 'number') {
+          const segResolvido = partesResolvidas
+            ? unpackPartesNaFrase(fraseAtual, partesResolvidas)
+            : {
+                base: textoFinal,
+                subs: null,
+                conclusaoResolvida: null,
+                temConc: !!fraseAtual?.frase?.conclusao,
+              };
+          const { base: blocoBase, subs: subsRes, conclusaoResolvida } = segResolvido;
+
+          editor.commands.setTextSelection(posicaoInsercao);
+          editor.commands.insertContent(blocoBase);
+
+          if (
+            fraseAtual?.frase?.substituicoesOutras &&
+            fraseAtual.frase.substituicoesOutras.length > 0
+          ) {
+            let htmlAtual = editor.getHTML();
+            fraseAtual.frase.substituicoesOutras.forEach((substituicao, idx) => {
+              const substituirPor =
+                subsRes && subsRes[idx] !== undefined
+                  ? subsRes[idx]
+                  : aplicarFormatacao(
+                      converterQuebrasDeLinha(substituicao.substituirPor)
+                    );
+              htmlAtual = substituirPrimeiraOcorrenciaOutras(
+                htmlAtual,
+                substituicao.procurarPor,
+                substituirPor
+              );
+            });
+            editor.commands.setContent(htmlAtual);
+          }
+
+          let novoTextoIns = editor.getHTML();
+          const temConclusaoIns = !!fraseAtual?.frase?.conclusao;
+
+          if (fraseAtual?.frase?.conclusao) {
+            try {
+              const conclusaoFormatada =
+                partesResolvidas != null &&
+                conclusaoResolvida != null &&
+                conclusaoResolvida !== ''
+                  ? conclusaoResolvida
+                  : aplicarFormatacao(fraseAtual.frase.conclusao);
+
+              if (conclusaoDoModelo) {
+                const htmlAtual = editor.getHTML();
+                const comConclusao = htmlAtual.replace(
+                  conclusaoDoModelo,
+                  '<br>' + conclusaoFormatada
+                );
+                editor.commands.setContent(comConclusao);
+                setConclusaoDoModelo('');
+              } else {
+                const textoAtualPlain = novoTextoIns.replace(/<[^>]*>/g, '');
+                const textoConclusao = conclusaoFormatada.replace(/<[^>]*>/g, '');
+                const conclusaoPluralizada = pluralize(textoConclusao);
+                const conclusaoExisteSingular = textoAtualPlain.includes(textoConclusao);
+                const conclusaoExistePlural = textoAtualPlain.includes(conclusaoPluralizada);
+
+                if (!conclusaoExisteSingular && !conclusaoExistePlural) {
+                  const posFinalDoc = editor.state.doc.content.size;
+                  editor.commands.insertContentAt(
+                    posFinalDoc,
+                    '<br>' + conclusaoFormatada
+                  );
+                } else if (conclusaoExisteSingular && !conclusaoExistePlural) {
+                  const conclusaoPluralizadaFormatada = aplicarFormatacao(
+                    conclusaoPluralizada
+                  );
+                  const comPlural = novoTextoIns.replace(
+                    textoConclusao,
+                    conclusaoPluralizadaFormatada
+                  );
+                  editor.commands.setContent(comPlural);
+                }
+              }
+
+              novoTextoIns = editor.getHTML();
+            } catch {
+              /* noop */
+            }
+          }
+
+          if (!temConclusaoIns) {
+            const posicaoFinal = editor.state.selection.from;
+            const maxPos = editor.state.doc.content.size;
+            const safePos = Math.max(0, Math.min(posicaoFinal, maxPos));
+            editor.chain().focus().setTextSelection(safePos).run();
+          } else {
+            editor.commands.setTextSelection(editor.state.doc.content.size);
+          }
+
+          setTexto(novoTextoIns);
+        }
       }
 
       // Limpa os estados do novo fluxo

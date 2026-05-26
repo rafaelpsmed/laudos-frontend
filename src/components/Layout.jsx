@@ -1,7 +1,7 @@
 import { AppShell, Burger, Group, NavLink, Button, Text, ActionIcon, Tooltip } from '@mantine/core';
 import { ColorSchemeToggle } from './ColorSchemeToggle';
 import { useDisclosure } from '@mantine/hooks';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconTransfer, IconSettings, IconChevronLeft, IconChevronRight, IconBrain } from '@tabler/icons-react';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconTransfer, IconSettings, IconChevronLeft, IconChevronRight, IconBrain, IconTestPipe } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { jwtDecode } from "jwt-decode";
@@ -114,6 +114,16 @@ function Layout({ children }) {
               </ActionIcon>
             </Tooltip>
 
+            <Tooltip label="Frases (testes — editor TipTap)" position="right">
+              <ActionIcon
+                variant="subtle"
+                size="lg"
+                onClick={() => navigate('/frases-testes')}
+              >
+                <IconTestPipe size={20} />
+              </ActionIcon>
+            </Tooltip>
+
             <Tooltip label="Variáveis" position="right">
               <ActionIcon
                 variant="subtle"
@@ -176,6 +186,12 @@ function Layout({ children }) {
               label="Frases"
               leftSection={<IconQuote size={20} />}
               onClick={() => navigate('/frases')}
+            />
+            <NavLink
+              label="Frases (testes)"
+              description="Editor TipTap experimental"
+              leftSection={<IconTestPipe size={20} />}
+              onClick={() => navigate('/frases-testes')}
             />
             <NavLink
               label="Variáveis"

@@ -3,8 +3,19 @@ import { useState, useEffect } from 'react';
 import VariaveisCombobox from './VariaveisCombobox';
 import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp, IconSearch } from '@tabler/icons-react';
 import api from '../api';
+import { notifications } from '@mantine/notifications';
 
-function VariaveisModal({ onVariavelSelect }) {
+/**
+ * @param {object} props
+ * @param {(v: unknown) => void} [props.onVariavelSelect] — chamado ao escolher variável na lista (inserção no texto) quando deferInsertOnSelect=false
+ * @param {boolean} [props.deferInsertOnSelect=false] — se true, clicar na lista só preenche o formulário (modo editar chip)
+ * @param {string|null} [props.tituloVariavelPrecarregar] — se definido, busca na API e abre formulário para editar sem inserir
+ */
+function VariaveisModal({
+  onVariavelSelect,
+  deferInsertOnSelect = false,
+  tituloVariavelPrecarregar = null,
+}) {
   const [variavelSelecionada, setVariavelSelecionada] = useState(null);
   const [tipoControle, setTipoControle] = useState('');
   const [titulo, setTitulo] = useState('');
@@ -68,27 +79,71 @@ function VariaveisModal({ onVariavelSelect }) {
     }
   };
 
+  const preencherFormularioVariavel = (variavel) => {
+    setVariavelSelecionada(variavel);
+    setVariavelId(variavel.id);
+    setTitulo(variavel.tituloVariavel);
+    setTipoControle(variavel.variavel.tipo);
+    setValores(variavel.variavel.valores || []);
+    setDelimitador(variavel.variavel.delimitador || '');
+    setUltimoDelimitador(variavel.variavel.ultimoDelimitador || '');
+    setDescricao('');
+    setValor('');
+    setValorEditadoManualmente(false);
+  };
+
+  // Abre formulário ao clicar no chip `{Variável}` (global) sem inserção no editor
+  useEffect(() => {
+    const t = tituloVariavelPrecarregar?.trim();
+    if (!t) return undefined;
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await api.get('/api/variaveis/');
+        const lista = Array.isArray(response.data) ? response.data : [];
+        const v = lista.find((item) => item.tituloVariavel === t);
+        if (cancelled) return;
+        if (!v) {
+          notifications.show({
+            title: 'Variável global',
+            message: `Não foi encontrada variável cadastrada com o título «${t}». Cadastre em Variáveis ou ajuste o chip.`,
+            color: 'red',
+          });
+          return;
+        }
+        preencherFormularioVariavel(v);
+        setModo('criar');
+      } catch {
+        if (!cancelled) {
+          notifications.show({
+            title: 'Variável global',
+            message: 'Não foi possível carregar a variável.',
+            color: 'red',
+          });
+        }
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [tituloVariavelPrecarregar]);
+
   const handleVariavelSelect = (variavel) => {
     if (!variavel) {
       handleClear();
       return;
     }
 
-    setVariavelSelecionada(variavel);
-    setVariavelId(variavel.id);
-    setTitulo(variavel.tituloVariavel);
-    setTipoControle(variavel.variavel.tipo);
-    setValores(variavel.variavel.valores || []);
-    
-    if (variavel.variavel.delimitador) {
-      setDelimitador(variavel.variavel.delimitador);
-    }
-    
-    if (variavel.variavel.ultimoDelimitador) {
-      setUltimoDelimitador(variavel.variavel.ultimoDelimitador);
+    preencherFormularioVariavel(variavel);
+
+    if (deferInsertOnSelect) {
+      setModo('criar');
+      return;
     }
 
-    // Chama a função de callback com a variável selecionada
     if (onVariavelSelect) {
       onVariavelSelect(variavel);
     }

@@ -7,6 +7,7 @@ import {
   IconBrain,
 } from '@tabler/icons-react';
 import styles from './Landing.module.css';
+import { H2Control } from '@mantine/tiptap';
 
 const features = [
   {
@@ -22,12 +23,17 @@ const features = [
   {
     icon: IconVariable,
     title: 'Variáveis dinâmicas',
-    text: 'Preencha dados do paciente e do exame automaticamente onde o modelo permitir.',
+    text: 'Monte frases com variáveis que você pode editar e reutilizar em qualquer lugar.',
   },
   {
     icon: IconReport,
-    title: 'Laudos em documento',
+    title: 'Laudos em alguns cliques',
     text: 'Gere saída pronta para revisão e entrega no fluxo que você já usa no dia a dia.',
+  },
+  {
+    icon: IconFileText,
+    title: 'Customização',
+    text: 'Crie Modelos, Frases e Variáveis personalizadas para atender às suas necessidades. Você tem o controle total sobre o seu laudo.',
   },
   {
     icon: IconBrain,
@@ -43,7 +49,7 @@ export default function Landing() {
       <div className={styles.gridOverlay} aria-hidden />
 
       <header className={styles.header}>
-        <span className={styles.logo}>Sistema de Laudos</span>
+        <span className={styles.logo}>LaudEx</span>
         <nav className={styles.nav}>
           <Link className={styles.link} to="/login">
             Entrar
@@ -55,14 +61,17 @@ export default function Landing() {
       </header>
 
       <section className={styles.hero}>
-        <p className={styles.badge}>
+        {/* <p className={styles.badge}>
           <span className={styles.badgeDot} />
           Fluxo clínico moderno
-        </p>
+        </p> */}
         <h1 className={styles.title}>
+          LaudEx
+        </h1>
+        {/* <h3 className={styles.title}>
           Laudos médicos com{' '}
           <span className={styles.titleAccent}>precisão e ritmo</span>
-        </h1>
+        </h3> */}
         <p className={styles.subtitle}>
           Uma plataforma para organizar modelos, frases e variáveis — do rascunho ao documento
           final, com visual limpo e pensado para o cotidiano da radiologia e especialidades
@@ -72,9 +81,9 @@ export default function Landing() {
           <Link className={styles.btnMain} to="/login">
             Acessar o sistema
           </Link>
-          <Link className={styles.btnGhost} to="/register">
+          {/* <Link className={styles.btnGhost} to="/register">
             Criar uma conta
-          </Link>
+          </Link> */}
         </div>
       </section>
 
@@ -95,8 +104,22 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className={styles.cta}>
+        <h2 className={styles.sectionLabel}>
+          Comece agora mesmo
+        </h2>
+        
+        <p className={styles.cta}>
+          Crie sua conta e comece a usar a plataforma agora mesmo. Você terá acesso imediato a mais de 50 modelos de laudos de todos os métodos e mais de 400 frases e variáveis já cadastradas.
+          Não gostou de um modelo ou frase? Você pode editar ou criar a sua própria e usá-la em qualquer lugar.
+          Não encontrou o modelo ou frase que você precisa? Você pode criar a sua própria e usá-la em qualquer lugar.
+          Aqui a liberdade é total. Você tem o controle total sobre o seu laudo.
+        </p>
+
+      </section>
+
       <footer className={styles.footer}>
-        Sistema de Laudos — ferramenta de apoio à documentação clínica.
+        LaudEx — ferramenta de apoio à documentação clínica.
       </footer>
     </div>
   );
