@@ -2,7 +2,7 @@ import { MultiSelect } from '@mantine/core';
 import { useState, useEffect } from 'react';
 import api from '../api';
 
-function MetodosSelectFrases({ value, onChange, label = "Métodos das Frases" }) {
+function MetodosSelectFrases({ value, onChange, label = 'Métodos associados' }) {
   const [metodos, setMetodos] = useState([]);
 
   useEffect(() => {
@@ -25,7 +25,8 @@ function MetodosSelectFrases({ value, onChange, label = "Métodos das Frases" })
   return (
     <MultiSelect
       label={label}
-      placeholder="Selecione os métodos"
+      placeholder="Selecione os métodos (US, RX, TC...)"
+      description="Opcional. Vazio = disponível em todos os métodos."
       data={metodos}
       value={value}
       onChange={onChange}

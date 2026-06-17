@@ -7,7 +7,6 @@ import {
   IconBrain,
 } from '@tabler/icons-react';
 import styles from './Landing.module.css';
-import { H2Control } from '@mantine/tiptap';
 
 const features = [
   {
@@ -104,18 +103,33 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className={styles.cta}>
-        <h2 className={styles.sectionLabel}>
+      <section className={styles.cta} aria-labelledby="cta-heading">
+        <h2 id="cta-heading" className={styles.sectionLabel}>
           Comece agora mesmo
         </h2>
-        
-        <p className={styles.cta}>
-          Crie sua conta e comece a usar a plataforma agora mesmo. Você terá acesso imediato a mais de 50 modelos de laudos de todos os métodos e mais de 400 frases e variáveis já cadastradas.
-          Não gostou de um modelo ou frase? Você pode editar ou criar a sua própria e usá-la em qualquer lugar.
-          Não encontrou o modelo ou frase que você precisa? Você pode criar a sua própria e usá-la em qualquer lugar.
-          Aqui a liberdade é total. Você tem o controle total sobre o seu laudo.
-        </p>
-
+        <div className={styles.ctaContent}>
+          <p className={styles.ctaText}>
+            Crie sua conta e comece a usar a plataforma agora mesmo. Você terá acesso imediato a
+            mais de 50 modelos de laudos de todos os métodos e mais de 400 frases e variáveis já
+            cadastradas.
+          </p>
+          <p className={styles.ctaText}>
+            Não gostou de um modelo ou frase? Você pode editar ou criar a sua própria e usá-la em
+            qualquer lugar.
+          </p>
+          <p className={styles.ctaText}>
+            Não encontrou o modelo ou frase que você precisa? Você pode criar a sua própria e
+            usá-la em qualquer lugar.
+          </p>
+          <p className={styles.ctaText}>
+            Aqui a liberdade é total. Você tem o controle total sobre o seu laudo.
+          </p>
+        </div>
+        <div className={styles.ctaActions}>
+          <Link className={styles.btnMain} to="/login">
+            Acessar o sistema
+          </Link>
+        </div>
       </section>
 
       <footer className={styles.footer}>

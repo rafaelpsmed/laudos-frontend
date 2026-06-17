@@ -1,5 +1,5 @@
 import Layout from '../components/Layout';
-import { Divider, Stack, Grid, Text, NavLink, Tooltip, Group, Button, Checkbox, TextInput } from '@mantine/core';
+import { Divider, Stack, Grid, Text, NavLink, Tooltip, Group, Button, TextInput } from '@mantine/core';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import TextEditor from '../components/TextEditor';
 import MetodosSelect from '../components/MetodosSelect';
@@ -9,10 +9,22 @@ import SelecionarVariaveisModal from '../components/SelecionarVariaveisModal';
 import InserirFraseModal from '../components/InserirFraseModal';
 import api from '../api';
 import { IconFolder, IconFile } from '@tabler/icons-react';
-import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // Função para pluralizar palavras e frases
 import pluralize from '../utils/pluralizar';
+import {
+  converterQuebrasDeLinha,
+  substituirPrimeiraOcorrenciaOutras,
+} from '../utils/fraseEngine';
+import {
+  montarTextoCompostoParaVariaveisDaFrase,
+  aplicarValoresSelecionadosAoTexto,
+  splitPartesResolvidas,
+  unpackPartesNaFrase,
+  capitalizarInicioDaFrase,
+} from '../utils/variaveisFrase';
 
 function escapeHtmlForInlineText(text) {
   return text
@@ -143,7 +155,6 @@ function Laudos() {
   const [posicaoAtualCursor, setPosicaoAtualCursor] = useState(null);
   const editorRef = useRef(null);
   const [todasFrases, setTodasFrases] = useState([]);
-  const [baixarDocx, setBaixarDocx] = useState(false);
   const [tituloOutroModelo, setTituloOutroModelo] = useState('');
   const [treeDataOutroModelo, setTreeDataOutroModelo] = useState([]);
   const [metodosOutroModelo, setMetodosOutroModelo] = useState([]);
@@ -318,10 +329,13 @@ function Laudos() {
         f.modelos_laudo && f.modelos_laudo.includes(modeloSelecionado.id)
       );
 
-      // Busca as frases gerais (não associadas a nenhum modelo)
-      const frasesGerais = frasesResponse.data.filter(f => 
-        !f.modelos_laudo || f.modelos_laudo.length === 0
-      );
+      // Busca as frases gerais (sem modelo específico, filtradas por método quando aplicável)
+      const metodoModeloId = Number(modeloSelecionado.metodo);
+      const frasesGerais = frasesResponse.data.filter((f) => {
+        if (f.modelos_laudo && f.modelos_laudo.length > 0) return false;
+        if (!f.metodos || f.metodos.length === 0) return true;
+        return f.metodos.some((metodoId) => Number(metodoId) === metodoModeloId);
+      });
 
       // console.log('Categorias recebidas:', frasesDoModelo.map(frase => frase.categoriaFrase));
       
@@ -430,93 +444,7 @@ function Laudos() {
     }
   };
 
-  // Adiciona a função de conversão
-  const converterQuebrasDeLinha = (texto) => {
-    if (!texto) return '';
-    // Primeiro converte \n para uma quebra de linha real
-    const textoComQuebraReal = texto.replace(/\\n/g, '\n');
-    // Depois converte as quebras de linha reais para <br>
-    return textoComQuebraReal.replace(/\n/g, '<br>');
-  };
-
-  /** Escapa texto para uso literal em RegExp. */
-  const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  const capitalizarInicioDaFrase = (conteudo) => {
-    if (!conteudo) return conteudo;
-
-    return conteudo.replace(/^((?:\s|<[^>]+>)*(?:-\s*)?)([a-záàâãéêíóôõúç])/i, (match, prefixo, letra) => {
-      return `${prefixo}${letra.toUpperCase()}`;
-    });
-  };
-
-  /**
-   * Substitui a primeira ocorrência de "procurar" no HTML do editor.
-   * Com uma linha, mantém o comportamento antigo (string + converterQuebrasDeLinha).
-   * Com várias linhas, aceita entre elas marcação típica do TipTap: <br>, </p><p>,
-   * ou </span> seguido de <p> (e opcionalmente <span> antes da linha seguinte), etc.
-   */
-  const substituirPrimeiraOcorrenciaOutras = (conteudoHtml, procurarTextoPlain, substituirHtml) => {
-    if (procurarTextoPlain == null || procurarTextoPlain === '') return conteudoHtml;
-    const textoComQuebraReal = procurarTextoPlain.replace(/\\n/g, '\n');
-    const normalized = textoComQuebraReal.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const linhas = normalized.split('\n');
-
-    if (linhas.length <= 1) {
-      // SOLUÇÃO HÍBRIDA: Tenta replace simples primeiro, se falhar tenta com regex flexível
-      const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
-      const resultadoSimples = conteudoHtml.replace(procurarPor, substituirHtml);
-
-      // Se o replace simples funcionou (conteúdo mudou), retorna o resultado
-      if (resultadoSimples !== conteudoHtml) {
-        return resultadoSimples;
-      }
-
-      // Se não funcionou, tenta com regex que permite tags HTML entre as palavras
-      // Isso é necessário quando o texto no editor tem formatação (<span style="...">)
-      try {
-        // Divide em palavras mantendo espaços
-        const partes = procurarTextoPlain.split(/(\s+)/);
-        const pattern = partes.map(parte => {
-          if (parte.trim() === '') {
-            // Espaços: permitem &nbsp; e tags HTML opcionais
-            return '(?:\\s|&nbsp;|<[^>]+>)*';
-          } else {
-            // Palavra: escapa e permite tags opcionais depois
-            return escapeRegex(parte);
-          }
-        }).join('(?:\\s|&nbsp;|<[^>]+>)*');
-
-        const regex = new RegExp(pattern);
-        const resultadoRegex = conteudoHtml.replace(regex, substituirHtml);
-
-        // Se funcionou, retorna; senão retorna o original
-        return resultadoRegex !== conteudoHtml ? resultadoRegex : conteudoHtml;
-      } catch {
-        // Se regex falhar, retorna o conteúdo original (sem alterações)
-        return conteudoHtml;
-      }
-    }
-
-    const escapedParts = linhas.map((line) => escapeRegex(line));
-    // Entre trechos de texto: quebra simples, novo parágrafo, ou (comum no TextEditor)
-    // fim de <span> + novo <p class="editor-paragraph"> + opcional <span> com fonte.
-    const separadorEntreLinhas =
-      '(?:<br\\s*/?>' +
-      '|</p>\\s*<p[^>]*>' +
-      '|</span>\\s*</p>\\s*<p[^>]*>\\s*(?:<span[^>]*>)?' +
-      '|</span>\\s*<p[^>]*>\\s*(?:<span[^>]*>)?' +
-      '|</span>\\s*<br\\s*/?>\\s*<span[^>]*>' +
-      ')';
-    const pattern = escapedParts.join(separadorEntreLinhas);
-    try {
-      const regex = new RegExp(pattern);
-      return conteudoHtml.replace(regex, () => substituirHtml);
-    } catch {
-      const procurarPor = converterQuebrasDeLinha(procurarTextoPlain);
-      return conteudoHtml.replace(procurarPor, substituirHtml);
-    }
-  };
+  // Adiciona a função de conversão — ver utils/fraseEngine.js
 
   const cursorNoFinalDaFraseBase = (posicaoInicial, deltaInserido) => {
     const editor = editorRef.current?.editor;
@@ -542,46 +470,11 @@ function Laudos() {
     return posEncontrada;
   };
 
-  /** Separador invisível entre trechos (base, substituições outras, conclusão) no modal de variáveis. */
-  const SEP_SEGMENTO_VARIAVEIS = '\uE000';
-
   /**
    * Une frase base, cada substituição "outra" e a conclusão num único texto para detectar
    * e resolver variáveis de uma vez; após o modal o texto é repartido pelo mesmo separador.
+   * @see utils/variaveisFrase.js montarTextoCompostoParaVariaveisDaFrase
    */
-  const montarTextoCompostoParaVariaveisDaFrase = async (frase) => {
-    const blocos = [];
-
-    const addBloco = (raw) => {
-      blocos.push(aplicarFormatacao(converterQuebrasDeLinha(raw ?? '')));
-    };
-
-    addBloco(frase.frase.fraseBase);
-    if (frase.frase.substituicoesOutras?.length) {
-      frase.frase.substituicoesOutras.forEach((sub) => {
-        addBloco(sub.substituirPor);
-      });
-    }
-    if (frase.frase.conclusao) {
-      addBloco(frase.frase.conclusao);
-    }
-
-    const textoComposto = blocos.join(SEP_SEGMENTO_VARIAVEIS);
-    const resultado = await buscarVariaveisNoTexto(textoComposto, frase);
-    const temVariaveis =
-      resultado.variaveis.length > 0 ||
-      resultado.gruposOpcoes.length > 0 ||
-      resultado.variaveisLocais.length > 0 ||
-      textoComposto.includes('$');
-
-    return {
-      textoComposto,
-      resultado,
-      temVariaveis,
-      nSegmentos: blocos.length,
-      sep: SEP_SEGMENTO_VARIAVEIS,
-    };
-  };
 
   const processarFrase = async (frase, tipoInsercao = null, elementoLinha = null, posicaoCursor = null) => {
     let novoTexto = texto;
@@ -997,653 +890,19 @@ function Laudos() {
     }
   };
 
-  const buscarVariaveisNoTexto = async (texto, frase = null) => {
-    try {
-      // Busca todas as variáveis
-      const response = await api.get('/api/variaveis/');
-      const todasVariaveis = response.data;
-      
-      // Extrai o texto puro do HTML removendo tags, mas mantendo o conteúdo
-      // Isso é necessário porque o editor retorna HTML, mas as variáveis locais estão no texto
-      // IMPORTANTE: Processa as entidades HTML ANTES de remover as tags para evitar problemas
-      let textoPuro = texto
-        .replace(/&nbsp;/g, ' ') // Converte &nbsp; para espaço
-        .replace(/&amp;/g, '&') // Converte &amp; para & (deve vir antes de &lt; e &gt;)
-        .replace(/&lt;/g, '<') // Converte &lt; para <
-        .replace(/&gt;/g, '>') // Converte &gt; para >
-        .replace(/&quot;/g, '"') // Converte &quot; para "
-        .replace(/&#39;/g, "'") // Converte &#39; para '
-        .replace(/&#91;/g, '[') // Converte &#91; para [
-        .replace(/&#93;/g, ']') // Converte &#93; para ]
-        .replace(/&#x5B;/g, '[') // Converte &#x5B; para [
-        .replace(/&#x5D;/g, ']') // Converte &#x5D; para ]
-        .replace(/<br\s*\/?>/gi, '\n') // Converte <br> para quebra de linha
-        .replace(/<[^>]+>/g, ''); // Remove todas as tags HTML (deve vir por último)
-      
-      // Debug: verifica se o texto contém variáveis locais
-      // console.log('🔍 Texto original (primeiros 500 chars):', texto.substring(0, 500));
-      // console.log('🔍 Texto puro (primeiros 500 chars):', textoPuro.substring(0, 500));
-      // console.log('🔍 Contém {JSON} de variável local?', textoPuro.includes('"tipo":"variavelLocal"') || textoPuro.includes('"tipo":variavelLocal'));
-      // console.log('🔍 Contém [LOCAL:?', textoPuro.includes('[LOCAL:'));
-      
-      // Se temos a frase passada como parâmetro, também verifica a frase base original
-      if (frase && frase.frase && frase.frase.fraseBase) {
-        // console.log('🔍 Frase base original do backend (primeiros 200 chars):', frase.frase.fraseBase.substring(0, 200));
-        // console.log('🔍 Frase base contém [[LOCAL:?', frase.frase.fraseBase.includes('[[LOCAL:'));
-        // console.log('🔍 Frase base contém [LOCAL:?', frase.frase.fraseBase.includes('[LOCAL:'));
-      }
-      
-      // Array para armazenar todos os elementos na ordem que aparecem
-      const elementosOrdenados = [];
-      
-      // Encontra todas as ocorrências de {variavel}
-      const regexVariaveis = /{([^}]+)}/g;
-      let match;
-      
-      while ((match = regexVariaveis.exec(textoPuro)) !== null) {
-        const tituloVariavel = match[1];
-        // Procura a variável pelo título exato
-        const variavel = todasVariaveis.find(v => v.tituloVariavel === tituloVariavel);
-        
-        if (variavel) {
-          elementosOrdenados.push({
-            tipo: 'variavel',
-            dados: variavel,
-            posicao: match.index,
-            textoOriginal: match[0]
-          });
-        }
-      }
-
-      // Encontra todas as ocorrências de variáveis locais no formato {JSON} (formato completo salvo no backend)
-      // Procura por JSONs que começam com {"tipo":"variavelLocal"
-      let encontrouVariavelLocal = false;
-      let posicaoBusca = 0;
-      
-      // Busca por JSONs de variáveis locais no texto puro
-      while (posicaoBusca < textoPuro.length) {
-        // Procura pelo início de um JSON de variável local
-        const inicioJson = textoPuro.indexOf('{"tipo":"variavelLocal"', posicaoBusca);
-        if (inicioJson === -1) {
-          // Também tenta sem aspas no valor (caso o JSON tenha sido salvo sem aspas)
-          const inicioJsonSemAspas = textoPuro.indexOf('{"tipo":variavelLocal', posicaoBusca);
-          if (inicioJsonSemAspas === -1) break;
-          posicaoBusca = inicioJsonSemAspas;
-        } else {
-          posicaoBusca = inicioJson;
-        }
-        
-        // Encontra o { correspondente
-        const inicio = posicaoBusca;
-        let profundidade = 0;
-        let fim = inicio;
-        let dentroString = false;
-        let escape = false;
-        
-        // Percorre o texto para encontrar o } correspondente
-        for (let i = inicio; i < textoPuro.length; i++) {
-          const char = textoPuro[i];
-          
-          if (escape) {
-            escape = false;
-            continue;
-          }
-          
-          if (char === '\\') {
-            escape = true;
-            continue;
-          }
-          
-          if (char === '"' && !escape) {
-            dentroString = !dentroString;
-            continue;
-          }
-          
-          if (dentroString) continue;
-          
-          if (char === '{') {
-            profundidade++;
-          } else if (char === '}') {
-            profundidade--;
-            if (profundidade === 0) {
-              fim = i + 1;
-              break;
-            }
-          }
-        }
-        
-        if (fim > inicio) {
-          // Extrai o JSON completo
-          const jsonString = textoPuro.substring(inicio, fim);
-          
-          try {
-            // Tenta parsear o JSON (pode precisar corrigir aspas se necessário)
-            let jsonParaParsear = jsonString;
-            // Se o JSON não tiver aspas no valor de tipo, adiciona
-            if (jsonString.includes('"tipo":variavelLocal')) {
-              jsonParaParsear = jsonString.replace(/"tipo":variavelLocal/g, '"tipo":"variavelLocal"');
-            }
-            
-            const estruturaVariavel = JSON.parse(jsonParaParsear);
-            
-            // Verifica se é uma variável local
-            if (estruturaVariavel.tipo === 'variavelLocal') {
-              encontrouVariavelLocal = true;
-              const tituloVariavel = estruturaVariavel.label || estruturaVariavel.titulo || 'Variável Local';
-              
-              // console.log('✅ Variável local encontrada (formato JSON):', jsonString.substring(0, 100));
-              
-              // Cria uma estrutura similar às variáveis globais para processamento
-              const variavelLocalFormatada = {
-                tituloVariavel: tituloVariavel,
-                variavel: estruturaVariavel,
-                isLocal: true,
-                textoOriginal: jsonString, // Usado como chave para identificação única
-                id: `local_${inicio}_${elementosOrdenados.length}` // ID único baseado na posição
-              };
-              
-              elementosOrdenados.push({
-                tipo: 'variavelLocal',
-                dados: variavelLocalFormatada,
-                posicao: inicio
-              });
-              
-              posicaoBusca = fim;
-            } else {
-              posicaoBusca = fim;
-            }
-          } catch (error) {
-            // console.error('❌ Erro ao processar variável local:', error);
-            // console.error('   JSON string:', jsonString);
-            posicaoBusca = fim;
-          }
-        } else {
-          break;
-        }
-      }
-      
-      // Se não encontrou no formato completo, tenta detectar o formato formatado [LOCAL: Título]
-      // OU tenta buscar diretamente na frase original do backend se temos acesso a ela
-      if (!encontrouVariavelLocal) {
-        // PRIMEIRO: Se temos a frase passada como parâmetro, busca diretamente na frase base original
-        // Isso é mais confiável do que tentar extrair do HTML
-        if (frase && frase.frase) {
-          const partesOrigemVariavelLocal = [
-            frase.frase.fraseBase,
-            frase.frase.conclusao,
-            ...(frase.frase.substituicoesOutras?.map((s) => s.substituirPor) || []),
-          ].filter((x) => x != null && String(x) !== '');
-          const fraseBaseOriginal = partesOrigemVariavelLocal.join('\n');
-
-          if (fraseBaseOriginal) {
-          // Busca variáveis locais no formato {JSON} na frase original
-          let posicaoBuscaOriginal = 0;
-          
-          while (posicaoBuscaOriginal < fraseBaseOriginal.length) {
-            // Procura pelo início de um JSON de variável local
-            const inicioJson = fraseBaseOriginal.indexOf('{"tipo":"variavelLocal"', posicaoBuscaOriginal);
-            if (inicioJson === -1) {
-              // Também tenta sem aspas no valor
-              const inicioJsonSemAspas = fraseBaseOriginal.indexOf('{"tipo":variavelLocal', posicaoBuscaOriginal);
-              if (inicioJsonSemAspas === -1) break;
-              posicaoBuscaOriginal = inicioJsonSemAspas;
-            } else {
-              posicaoBuscaOriginal = inicioJson;
-            }
-            
-            // Encontra o { correspondente
-            const inicio = posicaoBuscaOriginal;
-            let profundidade = 0;
-            let fim = inicio;
-            let dentroString = false;
-            let escape = false;
-            
-            // Percorre o texto para encontrar o } correspondente
-            for (let i = inicio; i < fraseBaseOriginal.length; i++) {
-              const char = fraseBaseOriginal[i];
-              
-              if (escape) {
-                escape = false;
-                continue;
-              }
-              
-              if (char === '\\') {
-                escape = true;
-                continue;
-              }
-              
-              if (char === '"' && !escape) {
-                dentroString = !dentroString;
-                continue;
-              }
-              
-              if (dentroString) continue;
-              
-              if (char === '{') {
-                profundidade++;
-              } else if (char === '}') {
-                profundidade--;
-                if (profundidade === 0) {
-                  fim = i + 1;
-                  break;
-                }
-              }
-            }
-            
-            if (fim > inicio) {
-              // Extrai o JSON completo
-              const jsonString = fraseBaseOriginal.substring(inicio, fim);
-              
-              try {
-                // Tenta parsear o JSON
-                let jsonParaParsear = jsonString;
-                if (jsonString.includes('"tipo":variavelLocal')) {
-                  jsonParaParsear = jsonString.replace(/"tipo":variavelLocal/g, '"tipo":"variavelLocal"');
-                }
-                
-                const estruturaVariavel = JSON.parse(jsonParaParsear);
-                const tituloVariavel = estruturaVariavel.label || estruturaVariavel.titulo || 'Variável Local';
-                
-                // console.log('✅ Variável local encontrada na frase base original:', jsonString.substring(0, 100));
-                
-                // Encontra a posição aproximada no texto puro procurando pelo título formatado
-                const textoFormatado = `[LOCAL: ${tituloVariavel}]`;
-                const posicaoAproximada = textoPuro.indexOf(textoFormatado);
-                const posicao = posicaoAproximada !== -1 ? posicaoAproximada : textoPuro.length;
-                
-                // Cria a estrutura para processamento
-                const variavelLocalFormatada = {
-                  tituloVariavel: tituloVariavel,
-                  variavel: estruturaVariavel,
-                  isLocal: true,
-                  textoOriginal: jsonString, // Usa o JSON completo como chave
-                  id: `local_${posicao}_${elementosOrdenados.length}`
-                };
-                
-                elementosOrdenados.push({
-                  tipo: 'variavelLocal',
-                  dados: variavelLocalFormatada,
-                  posicao: posicao
-                });
-                
-                encontrouVariavelLocal = true;
-                posicaoBuscaOriginal = fim;
-              } catch (error) {
-                // console.error('❌ Erro ao processar variável local da frase base:', error);
-                // console.error('   JSON string:', jsonString);
-                posicaoBuscaOriginal = fim;
-              }
-            } else {
-              break;
-            }
-          }
-          }
-        }
-        
-        // SEGUNDO: Se ainda não encontrou, tenta detectar padrões [LOCAL: Título] no texto puro
-        // e buscar a frase original do backend
-        if (!encontrouVariavelLocal) {
-          // Detecta padrões [LOCAL: Título] (formato formatado sem JSON)
-          const regexVariavelLocalFormatada = /\[LOCAL:\s*([^\]]+)\]/g;
-          let matchFormatado;
-          const variaveisFormatadasEncontradas = [];
-          
-          while ((matchFormatado = regexVariavelLocalFormatada.exec(textoPuro)) !== null) {
-            const tituloFormatado = matchFormatado[1].trim();
-            // console.log('⚠️ Variável local formatada encontrada (sem JSON):', `[LOCAL: ${tituloFormatado}]`);
-            variaveisFormatadasEncontradas.push({
-              textoFormatado: matchFormatado[0],
-              titulo: tituloFormatado,
-              posicao: matchFormatado.index
-            });
-          }
-          
-          // Se encontrou variáveis no formato formatado, tenta buscar a frase original do backend
-          if (variaveisFormatadasEncontradas.length > 0) {
-            // console.log('🔍 Tentando buscar formato completo da frase do backend...');
-            
-            try {
-              let fraseBaseOriginal = '';
-              
-              // Se temos a frase passada como parâmetro, busca diretamente
-              if (frase && frase.id) {
-                const fraseResponse = await api.get(`/api/frases/${frase.id}/`);
-                const fd = fraseResponse.data.frase;
-                fraseBaseOriginal = [
-                  fd?.fraseBase,
-                  fd?.conclusao,
-                  ...(fd?.substituicoesOutras?.map((s) => s.substituirPor) || []),
-                ]
-                  .filter((x) => x != null && String(x) !== '')
-                  .join('\n');
-              } else {
-                // Se não temos frase, busca todas as frases e tenta encontrar
-                const todasFrasesResponse = await api.get('/api/frases/');
-                for (const fraseItem of todasFrasesResponse.data) {
-                  const f = fraseItem.frase;
-                  if (!f) continue;
-                  const blob = [
-                    f.fraseBase,
-                    f.conclusao,
-                    ...(f.substituicoesOutras?.map((s) => s.substituirPor) || []),
-                  ]
-                    .filter((x) => x != null && String(x) !== '')
-                    .join('\n');
-                  if (
-                    blob.includes('"tipo":"variavelLocal"') ||
-                    blob.includes('"tipo":variavelLocal')
-                  ) {
-                    fraseBaseOriginal = blob;
-                    break;
-                  }
-                }
-              }
-              
-              if (fraseBaseOriginal) {
-              // console.log('🔍 Frase base original do backend (primeiros 200 chars):', fraseBaseOriginal.substring(0, 200));
-              // console.log('🔍 Contém {JSON} de variável local?', fraseBaseOriginal.includes('"tipo":"variavelLocal"') || fraseBaseOriginal.includes('"tipo":variavelLocal'));
-                
-              // Busca variáveis locais no formato {JSON} na frase original
-              let posicaoBuscaBackend = 0;
-              
-              while (posicaoBuscaBackend < fraseBaseOriginal.length) {
-                // Procura pelo início de um JSON de variável local
-                const inicioJson = fraseBaseOriginal.indexOf('{"tipo":"variavelLocal"', posicaoBuscaBackend);
-                if (inicioJson === -1) {
-                  const inicioJsonSemAspas = fraseBaseOriginal.indexOf('{"tipo":variavelLocal', posicaoBuscaBackend);
-                  if (inicioJsonSemAspas === -1) break;
-                  posicaoBuscaBackend = inicioJsonSemAspas;
-                } else {
-                  posicaoBuscaBackend = inicioJson;
-                }
-                
-                // Encontra o { correspondente
-                const inicio = posicaoBuscaBackend;
-                let profundidade = 0;
-                let fim = inicio;
-                let dentroString = false;
-                let escape = false;
-                
-                for (let i = inicio; i < fraseBaseOriginal.length; i++) {
-                  const char = fraseBaseOriginal[i];
-                  
-                  if (escape) {
-                    escape = false;
-                    continue;
-                  }
-                  
-                  if (char === '\\') {
-                    escape = true;
-                    continue;
-                  }
-                  
-                  if (char === '"' && !escape) {
-                    dentroString = !dentroString;
-                    continue;
-                  }
-                  
-                  if (dentroString) continue;
-                  
-                  if (char === '{') {
-                    profundidade++;
-                  } else if (char === '}') {
-                    profundidade--;
-                    if (profundidade === 0) {
-                      fim = i + 1;
-                      break;
-                    }
-                  }
-                }
-                
-                if (fim > inicio) {
-                  const jsonString = fraseBaseOriginal.substring(inicio, fim);
-                  
-                  try {
-                    let jsonParaParsear = jsonString;
-                    if (jsonString.includes('"tipo":variavelLocal')) {
-                      jsonParaParsear = jsonString.replace(/"tipo":variavelLocal/g, '"tipo":"variavelLocal"');
-                    }
-                    
-                    const estruturaVariavel = JSON.parse(jsonParaParsear);
-                    const tituloVariavel = estruturaVariavel.label || estruturaVariavel.titulo || 'Variável Local';
-                    
-                    // Verifica se esta variável corresponde a alguma das variáveis formatadas encontradas
-                    const variavelCorrespondente = variaveisFormatadasEncontradas.find(
-                      v => v.titulo === tituloVariavel
-                    );
-                    
-                    if (variavelCorrespondente) {
-                      // console.log('✅ Variável local encontrada no backend:', jsonString.substring(0, 100));
-                      
-                      // Cria a estrutura para processamento
-                      const variavelLocalFormatada = {
-                        tituloVariavel: tituloVariavel,
-                        variavel: estruturaVariavel,
-                        isLocal: true,
-                        textoOriginal: jsonString, // Usa o JSON completo como chave
-                        id: `local_${variavelCorrespondente.posicao}_${elementosOrdenados.length}`
-                      };
-                      
-                      elementosOrdenados.push({
-                        tipo: 'variavelLocal',
-                        dados: variavelLocalFormatada,
-                        posicao: variavelCorrespondente.posicao
-                      });
-                      
-                      encontrouVariavelLocal = true;
-                    }
-                    
-                    posicaoBuscaBackend = fim;
-                  } catch (error) {
-                    // console.error('❌ Erro ao processar variável local do backend:', error);
-                    posicaoBuscaBackend = fim;
-                  }
-                } else {
-                  break;
-                }
-              }
-              }
-            } catch (error) {
-              // console.error('❌ Erro ao buscar frase do backend:', error);
-            }
-            
-            if (!encontrouVariavelLocal) {
-              // console.error('❌ ERRO: Não foi possível recuperar o formato completo das variáveis locais.');
-              // console.error('   Variáveis encontradas no formato formatado:', variaveisFormatadasEncontradas);
-            }
-          }
-        }
-      }
-      
-      if (!encontrouVariavelLocal) {
-        // console.log('⚠️ Nenhuma variável local encontrada no texto');
-      }
-
-      // Encontra todas as ocorrências de grupos de opções [op1//op2//op3] (formato antigo)
-      // IMPORTANTE: Esta regex deve vir DEPOIS da regex de variáveis locais para evitar conflitos
-      const regexOpcoes = /\[(([^\]]+)\/\/([^\]]+)(?:\/\/[^\]]+)*)\](?!\])/g; // Adicionado negative lookahead para não pegar [[LOCAL...]]
-      let matchOpcoes;
-      
-      while ((matchOpcoes = regexOpcoes.exec(textoPuro)) !== null) {
-        const grupoCompleto = matchOpcoes[0]; // Inclui os [ ]
-        const conteudoGrupo = matchOpcoes[1]; // Conteúdo entre [ ]
-        const opcoes = conteudoGrupo.split('//').map(op => op.trim());
-        
-        elementosOrdenados.push({
-          tipo: 'grupo',
-          dados: {
-            textoOriginal: grupoCompleto,
-            opcoes: opcoes
-          },
-          posicao: matchOpcoes.index
-        });
-      }
-
-      // Verifica se tem medida ($) - adiciona UMA entrada para CADA ocorrência
-      const regexMedidas = /\$/g;
-      let matchMedida;
-      let indiceMedida = 0;
-      while ((matchMedida = regexMedidas.exec(textoPuro)) !== null) {
-        elementosOrdenados.push({
-          tipo: 'medida',
-          dados: { textoOriginal: '$', indice: indiceMedida },
-          posicao: matchMedida.index
-        });
-        indiceMedida++;
-      }
-      
-      // Ordena os elementos pela posição no texto
-      elementosOrdenados.sort((a, b) => a.posicao - b.posicao);
-      
-      // Separa os elementos por tipo para manter compatibilidade
-      const variaveisEncontradas = elementosOrdenados
-        .filter(el => el.tipo === 'variavel')
-        .map(el => el.dados);
-        
-      const gruposOpcoes = elementosOrdenados
-        .filter(el => el.tipo === 'grupo')
-        .map(el => el.dados);
-      
-      const variaveisLocaisEncontradas = elementosOrdenados
-        .filter(el => el.tipo === 'variavelLocal')
-        .map(el => el.dados);
-      
-      // console.log('📦 Variáveis locais encontradas:', variaveisLocaisEncontradas.length);
-      if (variaveisLocaisEncontradas.length > 0) {
-        // console.log('   Primeira variável local:', variaveisLocaisEncontradas[0]);
-      }
-      
-      return {
-        variaveis: variaveisEncontradas,
-        gruposOpcoes: gruposOpcoes,
-        variaveisLocais: variaveisLocaisEncontradas,
-        elementosOrdenados: elementosOrdenados,
-        textoPuro: textoPuro
-      };
-    } catch (error) {
-      // console.error('Erro ao buscar variáveis:', error);
-      return {
-        variaveis: [],
-        gruposOpcoes: [],
-        variaveisLocais: [],
-        elementosOrdenados: [],
-        textoPuro: ''
-      };
-    }
-  };
 
     const handleVariaveisSelecionadas = (valoresSelecionados) => {
-    // console.log('🔄 handleVariaveisSelecionadas chamado com:', valoresSelecionados);
-    let textoFinal = textoTemporario;
-    // console.log('📝 Texto original:', textoFinal);
-
-    // Função para escapar caracteres especiais em regex
-    const escapeRegExp = (string) => {
-      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
-
-    // Primeiro, agrupa as variáveis por instância
-    const variaveisPorTitulo = {};
-    const variaveisNormais = {};
-
-    Object.entries(valoresSelecionados).forEach(([chave, valor]) => {
-      if (chave === '$') {
-        // Substitui o caractere '$' respeitando múltiplas ocorrências
-        if (Array.isArray(valor)) {
-          let i = 0;
-          textoFinal = textoFinal.replace(/\$/g, () => {
-            const v = valor[i++];
-            return v !== undefined && String(v).trim() !== '' ? String(v) : '$';
-          });
-        } else {
-          textoFinal = textoFinal.replace(/\$/g, valor);
-        }
-      } else if (chave.includes('//')) {
-        // Se a chave contém //, é um grupo de opções (formato antigo)
-        const regex = new RegExp(escapeRegExp(chave), 'g');
-        textoFinal = textoFinal.replace(regex, valor);
-      } else if (chave.startsWith('{') && (chave.includes('"tipo":"variavelLocal"') || chave.includes('"tipo":variavelLocal'))) {
-        // Se a chave começa com { e contém "tipo":"variavelLocal", é uma variável local (formato JSON)
-        // Escapa a chave para usar em regex
-        const regex = new RegExp(escapeRegExp(chave), 'g');
-        textoFinal = textoFinal.replace(regex, valor);
-      } else if (chave.includes('_') && /^.+_\d+$/.test(chave)) {
-        // É uma variável por instância (aceita títulos com espaços)
-        const partes = chave.split('_');
-        const instanciaIndex = parseInt(partes[partes.length - 1]);
-        const tituloBase = partes.slice(0, -1).join('_');
-
-        // console.log(`🔢 Variável por instância: ${chave} -> ${tituloBase}[${instanciaIndex}] = ${valor}`);
-
-        if (!variaveisPorTitulo[tituloBase]) {
-          variaveisPorTitulo[tituloBase] = [];
-        }
-        variaveisPorTitulo[tituloBase][instanciaIndex] = valor;
-      } else {
-        // Variável normal
-        variaveisNormais[chave] = valor;
-      }
-    });
-
-    // console.log('📊 Variáveis normais:', variaveisNormais);
-    // console.log('📊 Variáveis por título:', variaveisPorTitulo);
-
-    // Processa variáveis normais primeiro
-    Object.entries(variaveisNormais).forEach(([chave, valor]) => {
-      const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
-      textoFinal = textoFinal.replace(regex, valor);
-      // console.log(`✅ Substituição normal: {${chave}} -> ${valor}`);
-      console.log("match: " + valor + ", length: " + valor.length);
-      
-    });
-
-    // Processa variáveis por instância
-    Object.entries(variaveisPorTitulo).forEach(([tituloBase, instancias]) => {
-      const regex = new RegExp(`{${escapeRegExp(tituloBase)}}`, 'g');
-      let ocorrenciasEncontradas = 0;
-
-      // console.log(`🔄 Processando instâncias de ${tituloBase}:`, instancias);
-
-      textoFinal = textoFinal.replace(regex, (match) => {
-        const valor = instancias[ocorrenciasEncontradas];
-        // console.log(`🔄 Substituindo ocorrência ${ocorrenciasEncontradas} de {${tituloBase}}: ${match} -> ${valor}`);
-        ocorrenciasEncontradas++;
-        
-        return valor !== undefined ? valor : match;
-      });
-    });
+    let textoFinal = aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSelecionados);
 
     const pendenteVar =
       frasePendenteComVariaveisRef.current || frasePendenteComVariaveis;
     const segInfo = pendenteVar?.segmentacaoVariaveis;
 
-    let partesResolvidas = null;
-    if (segInfo) {
-      const { sep, n } = segInfo;
-      let partes = textoFinal.split(sep);
-      while (partes.length < n) partes.push('');
-      if (partes.length > n) {
-        partes = [
-          ...partes.slice(0, n - 1),
-          partes.slice(n - 1).join(sep),
-        ];
-      }
-      partesResolvidas = partes.map((p) => capitalizarInicioDaFrase(p));
-    } else {
-      textoFinal = capitalizarInicioDaFrase(textoFinal);
+    const splitResult = splitPartesResolvidas(textoFinal, segInfo);
+    let partesResolvidas = splitResult.partesResolvidas;
+    if (splitResult.textoFinal) {
+      textoFinal = splitResult.textoFinal;
     }
-
-    const unpackPartesNaFrase = (fraseAtual, partes) => {
-      const nSub = fraseAtual.frase.substituicoesOutras?.length ?? 0;
-      const temConc = !!fraseAtual.frase.conclusao;
-      const base = partes[0] ?? '';
-      const subs = [];
-      for (let i = 0; i < nSub; i++) {
-        subs.push(partes[1 + i] ?? '');
-      }
-      const conclusaoResolvida = temConc ? (partes[1 + nSub] ?? '') : '';
-      return { base, subs, conclusaoResolvida, temConc };
-    };
 
     // console.log('📝 Texto final:', textoFinal);
 
@@ -2095,11 +1354,60 @@ function Laudos() {
     buscarTodasFrases();
   }, []);
 
-  const gerarNomeArquivo = () => {
+  const gerarNomeArquivoPdf = () => {
     const agora = new Date();
     const data = agora.toLocaleDateString('pt-BR').replace(/\//g, '-');
     const hora = agora.toLocaleTimeString('pt-BR').replace(/:/g, '-');
-    return `laudo_${data}_${hora}.docx`;
+    return `laudo_${data}_${hora}.pdf`;
+  };
+
+  const baixarLaudoPdf = async (editor) => {
+    const html = editor.getHTML();
+    const pdfHost = document.createElement('div');
+    pdfHost.style.position = 'fixed';
+    pdfHost.style.left = '-9999px';
+    pdfHost.style.top = '0';
+    pdfHost.style.width = '794px';
+    pdfHost.style.padding = '40px';
+    pdfHost.style.background = '#ffffff';
+    pdfHost.style.color = '#000000';
+    pdfHost.style.fontFamily = 'Arial, sans-serif';
+    pdfHost.style.fontSize = '11pt';
+    pdfHost.style.lineHeight = '1.5';
+    pdfHost.innerHTML = html;
+    document.body.appendChild(pdfHost);
+
+    try {
+      const canvas = await html2canvas(pdfHost, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+      });
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const imgData = canvas.toDataURL('image/png');
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(gerarNomeArquivoPdf());
+    } finally {
+      document.body.removeChild(pdfHost);
+    }
   };
 
   const handleCopiarLaudo = async () => {
@@ -2125,9 +1433,8 @@ function Laudos() {
         await navigator.clipboard.write([textoParaClipboardFormatado]);
       }
 
-      copiarTextoComFormato();
+      await copiarTextoComFormato();
 
-      
       // Limpa a seleção
       editor.commands.setTextSelection(editor.state.selection.from);
       
@@ -2137,6 +1444,19 @@ function Laudos() {
     } catch (error) {
       // console.error('Erro ao copiar laudo:', error);
       alert('Erro ao copiar o laudo. Por favor, tente novamente.');
+    }
+  };
+
+  const handleBaixarLaudoPdf = async () => {
+    try {
+      const editor = editorRef.current?.editor;
+      if (!editor) return;
+
+      await baixarLaudoPdf(editor);
+      alert('Laudo baixado em PDF com sucesso!');
+    } catch (error) {
+      console.error('[Laudos] Erro ao baixar PDF:', error);
+      alert('Erro ao baixar o laudo em PDF. Por favor, tente novamente.');
     }
   };
 
@@ -2253,7 +1573,7 @@ function Laudos() {
       }
       alert('HTML do laudo (um único parágrafo) copiado com sucesso!');
     } catch (error) {
-      console.error('[Laudos] Erro ao copiar HTML (1 parágrafo / Copia Laudo 2):', error);
+      console.error('[Laudos] Erro ao copiar HTML (Copiar Laudo*):', error);
       alert('Erro ao copiar o HTML. Por favor, tente novamente.');
     }
   };
@@ -2424,14 +1744,11 @@ function Laudos() {
               >
                 Copia Laudo
               </Button>
-              <Button
-               // color="orange"
-                //variant="outline"
-                title="Copia o laudo para a área de transferência de outra forma, para melhor compatibilidade com alguns softwares"
-                onClick={handleCopiarHTMLLaudoUmParagrafo}
-              >
-                Copia Laudo 2
-              </Button>
+              <Tooltip label="Outra abordagem de Copiar o texto do Laudo para melhor Compatibilidade">
+                <Button onClick={handleCopiarHTMLLaudoUmParagrafo}>
+                  Copiar Laudo*
+                </Button>
+              </Tooltip>
 
               <Button
                 title="Copia o laudo sem formatação (texto puro, sem Negrito, tamanho de fonte, etc) para a área de transferência"
@@ -2439,6 +1756,12 @@ function Laudos() {
               >
                 Copia Laudo sem formatação
               </Button>
+
+              <Tooltip label="Baixa o laudo formatado em arquivo PDF">
+                <Button variant="outline" color="blue" onClick={handleBaixarLaudoPdf}>
+                  Baixar Laudo em PDF
+                </Button>
+              </Tooltip>
 
               <Button
                 variant="outline"
@@ -2480,15 +1803,6 @@ function Laudos() {
                 Copiar HTML (1 parágrafo)
               </Button> */}
             </Group>
-
-            <Tooltip label="Quando marcado, além de copiar o laudo, também será baixado um arquivo DOCX com o conteúdo formatado">
-              <Checkbox
-                label="Baixar Laudo em Docx"
-                checked={baixarDocx}
-                onChange={(event) => setBaixarDocx(event.currentTarget.checked)}
-                style={{ marginTop: '10px' }}
-              />
-            </Tooltip>
           </Stack>
         </Grid.Col>
       </Grid>

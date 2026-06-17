@@ -1,4 +1,4 @@
-import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper, ActionIcon, Select, Alert } from '@mantine/core';
+import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper, ActionIcon, Select } from '@mantine/core';
 import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff, IconHelp, IconGripVertical } from '@tabler/icons-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { useAudioTranscription } from '../utils/useAudioTranscription';
 
 // Componentes reutilizáveis
 import MetodosSelect from '../components/MetodosSelect';
+import MetodosSelectFrases from '../components/MetodosSelectFrases';
 import TituloCombobox from '../components/TituloCombobox';
 import TextEditor from '../components/TextEditor';
 import Layout from '../components/Layout';
@@ -269,6 +270,7 @@ function FrasesTestes() {
   const [substituicoesOutrasSemModelo, setSubstituicoesOutrasSemModelo] = useState([]);
   const [conclusaoSemModelo, setConclusaoSemModelo] = useState('');
   const [fraseIdSemModelo, setFraseIdSemModelo] = useState(null);
+  const [metodosSemModelo, setMetodosSemModelo] = useState([]);
   const [categoriasFiltradasSemModelo, setCategoriasFiltradasSemModelo] = useState([]);
   const [titulosFiltradosSemModelo, setTitulosFiltradosSemModelo] = useState([]);
 
@@ -1147,6 +1149,7 @@ function FrasesTestes() {
   const handleClearSemModelo = () => {
     setCategoriaSemModelo('');
     setTituloFraseSemModelo('');
+    setMetodosSemModelo([]);
     setFraseBaseSemModelo('');
     setSubstituicaoFraseBaseSemModelo('');
     setProcurarPorSemModelo('');
@@ -1198,6 +1201,8 @@ function FrasesTestes() {
       const dadosFrase = {
         categoriaFrase: categoriaSemModelo.trim(),
         tituloFrase: tituloFraseSemModelo.trim(),
+        metodos: metodosSemModelo.map((id) => parseInt(id, 10)),
+        modelos_laudo: [],
         frase: {
           fraseBase: fraseBaseCompleta,
           substituicaoFraseBase: converterCampoSalvar(substituicaoFraseBaseSemModelo),
@@ -1269,6 +1274,8 @@ function FrasesTestes() {
       const dadosFrase = {
         categoriaFrase: categoriaSemModelo.trim(),
         tituloFrase: tituloFraseSemModelo.trim(),
+        metodos: metodosSemModelo.map((id) => parseInt(id, 10)),
+        modelos_laudo: [],
         frase: {
           fraseBase: fraseBaseCompleta,
           substituicaoFraseBase: converterCampoSalvar(substituicaoFraseBaseSemModelo),
@@ -1422,6 +1429,7 @@ function FrasesTestes() {
         // console.log('Frase encontrada:', frase);
         
         setFraseIdSemModelo(frase.id);
+        setMetodosSemModelo((frase.metodos || []).map((id) => id.toString()));
         const c = carregarCamposTipTapDaFrase(frase.frase);
         setFraseBaseSemModelo(c.fraseBase);
         setSubstituicaoFraseBaseSemModelo(c.substituicaoFraseBase);
@@ -1433,6 +1441,7 @@ function FrasesTestes() {
         setSubstituicaoFraseBaseSemModelo('');
         setSubstituicoesOutrasSemModelo([]);
         setConclusaoSemModelo('');
+        setMetodosSemModelo([]);
         setFraseIdSemModelo(null);
       }
     } catch (error) {
@@ -1441,6 +1450,7 @@ function FrasesTestes() {
       setSubstituicaoFraseBaseSemModelo('');
       setSubstituicoesOutrasSemModelo([]);
       setConclusaoSemModelo('');
+      setMetodosSemModelo([]);
       setFraseIdSemModelo(null);
     }
   };
@@ -1844,9 +1854,6 @@ function FrasesTestes() {
 
   return (
     <Layout>
-      <Alert color="cyan" variant="light" mb="md" title="Frases — modo testes (/frases-testes)">
-        Frase Base usa editor TipTap: variáveis locais em chips amarelos e globais em azul — o chip mostra só o nome; clique para editar (local) ou ver aviso (global).
-      </Alert>
       <Grid gutter="md">
         {/* Coluna da Esquerda */}
         <Grid.Col span={6}>
@@ -1942,7 +1949,7 @@ function FrasesTestes() {
                   </Combobox.Dropdown>
                 </Combobox>
 
-                {/* Frase Base — TipTap (testes) */}
+                {/* Frase Base */}
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
@@ -2191,6 +2198,16 @@ function FrasesTestes() {
               <Stack spacing="md">
                 <Divider label="Frases sem Modelo Associado" labelPosition="center" my="md" />
 
+                <MetodosSelectFrases
+                  value={metodosSemModelo}
+                  onChange={setMetodosSemModelo}
+                  label="Métodos associados"
+                />
+                <Text size="xs" c="dimmed" mt={-8}>
+                  Selecione US, RX, TC etc. em que a frase ficará disponível. Deixe vazio para
+                  todos os métodos.
+                </Text>
+
                 {/* Combobox Categoria */}
                 <Combobox
                   store={comboboxCategoriaSemModelo}
@@ -2257,7 +2274,7 @@ function FrasesTestes() {
                   </Combobox.Dropdown>
                 </Combobox>
 
-                {/* Frase Base — TipTap (testes) */}
+                {/* Frase Base */}
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">

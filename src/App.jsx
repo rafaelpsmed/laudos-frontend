@@ -47,7 +47,6 @@ import { Notifications } from '@mantine/notifications';
 
 // Páginas
 import ModeloLaudo from './pages/ModeloLaudo';
-import Frases from './pages/Frases';
 import FrasesTestes from './pages/FrasesTestes';
 import Variaveis from './pages/Variaveis';
 import Laudos from './pages/Laudos';
@@ -100,15 +99,11 @@ function App() {
 
         <Route path="/frases" element={
           <ProtectedRoute>
-            <Frases />
-          </ProtectedRoute>
-        } />
-
-        <Route path="/frases-testes" element={
-          <ProtectedRoute>
             <FrasesTestes />
           </ProtectedRoute>
         } />
+
+        <Route path="/frases-testes" element={<Navigate to="/frases" replace />} />
 
         <Route path="/variaveis" element={
           <ProtectedRoute>

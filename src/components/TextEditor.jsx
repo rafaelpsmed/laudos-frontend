@@ -276,7 +276,10 @@ const TextEditor = forwardRef(({
   enableAutoSave = true,
   autoSaveKey = 'textEditor_autoSave',
   autoSaveInterval = 5000, // 5 segundos
-  showLoadButton = true
+  showLoadButton = true,
+  stickyToolbar = true,
+  fillHeight = false,
+  autoLoadOnMount = false,
 }, ref) => {
   // Estados gerais do componente
   const [ultimaPosicaoDolar, setUltimaPosicaoDolar] = useState(-1);
@@ -299,6 +302,7 @@ const TextEditor = forwardRef(({
   const [autoSaveMessage, setAutoSaveMessage] = useState('');
   const autoSaveIntervalRef = useRef(null);
   const lastSavedContentRef = useRef('');
+  const autoLoadedRef = useRef(false);
 
   // Função para salvar conteúdo no localStorage
   const saveToLocalStorage = useCallback((content) => {
@@ -884,9 +888,9 @@ const TextEditor = forwardRef(({
     editor
   }));
 
-  // Atualiza o conteúdo do editor quando a prop content mudar
+  // Atualiza o conteúdo do editor quando a prop content mudar (modo controlado)
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || content === undefined) return;
     const next = content || '';
     // Se a mudança veio do próprio editor, não reaplica setContent (evita resetar o cursor)
     if (next === lastHtmlFromEditorRef.current) return;
@@ -948,6 +952,39 @@ const TextEditor = forwardRef(({
       setHasAutoSavedContent(true);
     }
   }, [enableAutoSave, autoSaveKey]);
+
+  // Carrega backup automaticamente ao montar (ex.: retorno à aba IA)
+  useEffect(() => {
+    if (!autoLoadOnMount || !enableAutoSave || !editor || autoLoadedRef.current) return;
+
+    const savedContent = localStorage.getItem(autoSaveKey);
+    if (!savedContent || !savedContent.trim()) return;
+
+    const isEmpty = savedContent === '<p></p>' || savedContent === '<p><br></p>';
+    if (isEmpty) return;
+
+    try {
+      editor.commands.setContent(savedContent);
+      lastSavedContentRef.current = savedContent;
+      lastHtmlFromEditorRef.current = savedContent;
+      setHasAutoSavedContent(true);
+      autoLoadedRef.current = true;
+    } catch (error) {
+      console.error('Erro ao carregar backup automaticamente:', error);
+    }
+  }, [autoLoadOnMount, enableAutoSave, editor, autoSaveKey]);
+
+  // Salva ao desmontar (navegação para outra aba)
+  useEffect(() => {
+    if (!enableAutoSave || !editor) return;
+
+    return () => {
+      const currentContent = editor.getHTML();
+      if (currentContent && currentContent.trim()) {
+        saveToLocalStorage(currentContent);
+      }
+    };
+  }, [enableAutoSave, editor, saveToLocalStorage]);
 
   // Auto-save quando o conteúdo muda (debounced)
   useEffect(() => {
@@ -1236,7 +1273,22 @@ const TextEditor = forwardRef(({
   };
 
   return (
-    <Stack spacing="md" style={{ position: 'relative' }}>
+    <Stack
+      spacing={fillHeight ? 0 : 'md'}
+      style={{
+        position: 'relative',
+        ...(fillHeight
+          ? {
+              flex: 1,
+              minHeight: 0,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }
+          : {}),
+      }}
+    >
       {/* Preview do texto sendo reconhecido */}
       {isRecording && previewText && (
         <Paper
@@ -1311,22 +1363,65 @@ const TextEditor = forwardRef(({
         onClick={handleEditorClick}
         onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}
-        style={{ 
+        className={fillHeight ? 'text-editor-fill-height' : undefined}
+        style={{
           cursor: aguardandoClique || aguardandoLinha ? 'pointer' : 'text',
           border: '1px solid #dee2e6',
           borderRadius: '4px',
-          opacity: aguardandoClique || aguardandoLinha || aguardandoPosicaoAtual ? 0.8 : 1
+          opacity: aguardandoClique || aguardandoLinha || aguardandoPosicaoAtual ? 0.8 : 1,
+          ...(fillHeight
+            ? {
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }
+            : {}),
         }}
       >
         <RichTextEditor 
           editor={editor} 
           style={{ 
-            minHeight: 300,
+            minHeight: fillHeight ? undefined : 300,
+            ...(fillHeight
+              ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
+              : {}),
             opacity: aguardandoClique || aguardandoLinha || aguardandoPosicaoAtual ? 0.8 : 1
           }}
-          styles={editorStyles}
+          styles={{
+            ...editorStyles,
+            ...(fillHeight
+              ? {
+                  root: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    flex: 1,
+                    minHeight: 0,
+                    height: '100%',
+                    overflow: 'hidden',
+                  },
+                  toolbar: {
+                    flexShrink: 0,
+                  },
+                  typographyStylesProvider: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                  },
+                  content: {
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
+                  },
+                }
+              : {}),
+          }}
         >
-          <RichTextEditor.Toolbar sticky stickyOffset={60}>
+          <RichTextEditor.Toolbar sticky={stickyToolbar} stickyOffset={60}>
             <RichTextEditor.ControlsGroup>
               <Tooltip label="Desfazer (Ctrl+Z)">
                 <RichTextEditor.Control
@@ -1498,51 +1593,75 @@ const TextEditor = forwardRef(({
             </RichTextEditor.ControlsGroup>
           </RichTextEditor.Toolbar>
 
-          <RichTextEditor.Content />
+          <RichTextEditor.Content
+            style={
+              fillHeight
+                ? {
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
+                  }
+                : undefined
+            }
+          />
         </RichTextEditor>
       </div>
 
-      {/* Mensagens de auto-save */}
-      {autoSaveMessage && (
-        <Alert
-          icon={autoSaveMessage.includes('erro') || autoSaveMessage.includes('Erro') ? <IconAlertCircle size={16} /> : <IconCheck size={16} />}
-          color={autoSaveMessage.includes('erro') || autoSaveMessage.includes('Erro') ? 'red' : 'green'}
-          title="Auto-save"
-          size="sm"
-          mb="sm"
+      {(autoSaveMessage || (showLoadButton && enableAutoSave)) && (
+        <div
+          style={
+            fillHeight
+              ? {
+                  flexShrink: 0,
+                  borderTop: '1px solid #dee2e6',
+                  paddingTop: 8,
+                  marginTop: 0,
+                }
+              : undefined
+          }
         >
-          {autoSaveMessage}
-        </Alert>
-      )}
-
-      {/* Botões de auto-save */}
-      {showLoadButton && enableAutoSave && (
-        <Group spacing="xs" mb="sm">
-          <Button
-            size="xs"
-            variant="outline"
-            leftSection={<IconDownload size={14} />}
-            onClick={loadFromLocalStorage}
-            disabled={!hasAutoSavedContent}
-          >
-            Carregar Backup
-          </Button>
-          
-          {hasAutoSavedContent && (
-            <Button
-              size="xs"
-              variant="subtle"
-              color="red"
-              onClick={clearAutoSave}
+          {autoSaveMessage && (
+            <Alert
+              icon={autoSaveMessage.includes('erro') || autoSaveMessage.includes('Erro') ? <IconAlertCircle size={16} /> : <IconCheck size={16} />}
+              color={autoSaveMessage.includes('erro') || autoSaveMessage.includes('Erro') ? 'red' : 'green'}
+              title="Auto-save"
+              size="sm"
+              mb="sm"
             >
-              Limpar Backup
-            </Button>
+              {autoSaveMessage}
+            </Alert>
           )}
-          
-          <Text size="xs" c="dimmed">
-            {hasAutoSavedContent ? 'Backup disponível' : 'Nenhum backup'}
-          </Text>
-        </Group>
+
+          {showLoadButton && enableAutoSave && (
+            <Group spacing="xs" mb={fillHeight ? 0 : 'sm'}>
+              <Button
+                size="xs"
+                variant="outline"
+                leftSection={<IconDownload size={14} />}
+                onClick={loadFromLocalStorage}
+                disabled={!hasAutoSavedContent}
+              >
+                Carregar Backup
+              </Button>
+
+              {hasAutoSavedContent && (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="red"
+                  onClick={clearAutoSave}
+                >
+                  Limpar Backup
+                </Button>
+              )}
+
+              <Text size="xs" c="dimmed">
+                {hasAutoSavedContent ? 'Backup disponível' : 'Nenhum backup'}
+              </Text>
+            </Group>
+          )}
+        </div>
       )}
 
       {/* Context Menu */}
@@ -1858,6 +1977,15 @@ const TextEditor = forwardRef(({
         
         .ProseMirror table p {
           margin: 0 !important;
+        }
+
+        /* Scroll interno do editor em painéis com altura fixa (ex.: tela IA) */
+        .text-editor-fill-height {
+          height: 100%;
+        }
+
+        .text-editor-fill-height .ProseMirror {
+          min-height: 120px;
         }
       `}</style>
     </Stack>
