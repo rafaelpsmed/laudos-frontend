@@ -6,6 +6,34 @@ export function converterQuebrasDeLinha(texto) {
   return textoComQuebraReal.replace(/\n/g, '<br>');
 }
 
+/** Remove tags HTML preservando quebras de parágrafo/br. */
+export function htmlParaTextoPuro(html) {
+  if (!html) return '';
+  return html
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Extrai o bloco após "impressão:" ou "conclusão:" a partir de texto puro. */
+export function extrairConclusaoDoTextoPuro(textoPuro) {
+  if (!textoPuro) return '';
+  const match = textoPuro.match(/(?:impressão:|conclusão:)\s*([\s\S]*)$/i);
+  return match ? match[1].trim() : '';
+}
+
+export function extrairConclusaoDoHtml(html) {
+  return extrairConclusaoDoTextoPuro(htmlParaTextoPuro(html));
+}
+
 export function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

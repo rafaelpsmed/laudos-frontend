@@ -17,8 +17,11 @@ import pluralize from '../utils/pluralizar';
 import {
   converterQuebrasDeLinha,
   substituirPrimeiraOcorrenciaOutras,
+  extrairConclusaoDoTextoPuro,
+  extrairConclusaoDoHtml,
 } from '../utils/fraseEngine';
 import {
+  buscarVariaveisNoTexto,
   montarTextoCompostoParaVariaveisDaFrase,
   aplicarValoresSelecionadosAoTexto,
   splitPartesResolvidas,
@@ -169,6 +172,19 @@ function Laudos() {
   const [frasePendenteComVariaveis, setFrasePendenteComVariaveis] = useState(null);
   const posicaoInsercaoFraseRef = useRef(null);
   const frasePendenteComVariaveisRef = useRef(null);
+  const carregandoModeloRef = useRef(false);
+
+  const LAUDOS_AUTOSAVE_KEY = 'laudos_editor_autoSave';
+
+  /** Carrega HTML do modelo no editor sem conflito com conteúdo/ seleção anterior. */
+  const aplicarModeloNoEditor = useCallback((html) => {
+    setCursorPosicao(null);
+    const textoHtml = html || '';
+    editorRef.current?.setExternalContent?.(textoHtml);
+    const normalizado = editorRef.current?.editor?.getHTML?.() ?? textoHtml;
+    setTexto(normalizado);
+    localStorage.removeItem(LAUDOS_AUTOSAVE_KEY);
+  }, []);
 
   const aplicarFormatacao = useCallback((conteudo, editor = editorRef.current?.editor) => {
     if (!editor) return conteudo;
@@ -271,67 +287,55 @@ function Laudos() {
   };
 
   const handleTituloSelect = async (selectedTitulo) => {
+    if (carregandoModeloRef.current) return;
+    carregandoModeloRef.current = true;
     try {
       const modeloSelecionado = titulosDisponiveis.find(item => item.titulo === selectedTitulo);
       if (!modeloSelecionado) {
-        // console.error('Modelo não encontrado para o título:', selectedTitulo);
         return;
       }
 
-      // Salva o modelo atual no localStorage
       localStorage.setItem('modeloLaudoAtual', JSON.stringify({
         id: modeloSelecionado.id,
         titulo: selectedTitulo,
-        metodo: metodosModelo[0] // Pega o primeiro método selecionado
+        metodo: metodosModelo[0]
       }));
 
       const response = await api.get(`/api/modelo_laudo/${modeloSelecionado.id}/`);
-      
-      // Atualiza o editor com o texto do modelo
-      let textoModelo = response.data.texto || '';
+
+      const textoModelo = response.data.texto || '';
       const textoFormatado = typeof textoModelo === 'string' ? textoModelo : String(textoModelo);
-      
-      // Procura por variáveis e grupos de opções no texto do modelo
-      const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } = await buscarVariaveisNoTexto(textoFormatado);
-      
-      // Se encontrou variáveis, grupos de opções, variáveis locais ou tem '$', guarda o texto temporariamente e abre o modal
+
+      const { variaveis, gruposOpcoes, variaveisLocais, elementosOrdenados, textoPuro } =
+        await buscarVariaveisNoTexto(textoFormatado);
+
+      const conclusao = extrairConclusaoDoTextoPuro(textoPuro);
+      setConclusaoDoModelo(conclusao);
+
       if (variaveis.length > 0 || gruposOpcoes.length > 0 || variaveisLocais.length > 0 || textoFormatado.includes('$')) {
         setTextoTemporario(textoFormatado);
         setVariaveisEncontradas(variaveis);
         setGruposOpcoesEncontrados(gruposOpcoes);
         setElementosOrdenados(elementosOrdenados);
         setTextoPuroParaModal(textoPuro);
-        setFraseTemporaria(null); // Não é uma frase, é um modelo
+        setFraseTemporaria(null);
         setModalVariaveisAberto(true);
       } else {
-        // Se não encontrou variáveis, processa normalmente
-        // Procura por "impressão:" ou "conclusão:" no texto
-        const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
-        const match = textoFormatado.match(regex);
-        
-        if (match) {
-          // Se encontrou, extrai a conclusão
-          const conclusao = match[1].trim();
-          setConclusaoDoModelo(conclusao);
-          setTexto(textoFormatado);
-        } else {
-          // Se não encontrou, mantém o texto original e limpa a conclusão
-          setTexto(textoFormatado);
-          setConclusaoDoModelo('');
-        }
+        aplicarModeloNoEditor(textoFormatado);
       }
-      
+
       setModeloId(modeloSelecionado.id);
 
-      // Busca as frases associadas ao modelo
       const frasesResponse = await api.get('/api/frases/');
-      const frasesDoModelo = frasesResponse.data.filter(f => 
-        f.modelos_laudo && f.modelos_laudo.includes(modeloSelecionado.id)
+      const frasesLista = Array.isArray(frasesResponse.data) ? frasesResponse.data : [];
+      const modeloIdNum = Number(modeloSelecionado.id);
+
+      const frasesDoModelo = frasesLista.filter(
+        (f) => f.modelos_laudo && f.modelos_laudo.some((id) => Number(id) === modeloIdNum)
       );
 
-      // Busca as frases gerais (sem modelo específico, filtradas por método quando aplicável)
-      const metodoModeloId = Number(modeloSelecionado.metodo);
-      const frasesGerais = frasesResponse.data.filter((f) => {
+      const metodoModeloId = Number(modeloSelecionado.metodo ?? response.data.metodo);
+      const frasesGerais = frasesLista.filter((f) => {
         if (f.modelos_laudo && f.modelos_laudo.length > 0) return false;
         if (!f.metodos || f.metodos.length === 0) return true;
         return f.metodos.some((metodoId) => Number(metodoId) === metodoModeloId);
@@ -382,10 +386,12 @@ function Laudos() {
       });
 
       setTreeDataModelo(treeItems);
-      
+
     } catch (error) {
-      // console.error('Erro ao buscar modelo completo:', error);
+      console.error('Erro ao buscar modelo completo:', error);
       alert('Erro ao carregar o modelo. Por favor, tente novamente.');
+    } finally {
+      carregandoModeloRef.current = false;
     }
   };
 
@@ -1135,20 +1141,8 @@ function Laudos() {
       setPosicaoInsercaoFrase(null);
       posicaoInsercaoFraseRef.current = null;
     } else if (!fraseTemporaria) {
-      // Se é um modelo (fraseTemporaria é null), processa como modelo
-      const regex = /(?:impressão:|conclusão:)([^]*?)(?=\n|$)/i;
-      const match = textoFinal.match(regex);
-
-      if (match) {
-        // Se encontrou, extrai a conclusão
-        const conclusao = match[1].trim();
-        setConclusaoDoModelo(conclusao);
-        setTexto(textoFinal);
-      } else {
-        // Se não encontrou, mantém o texto original e limpa a conclusão
-        setTexto(textoFinal);
-        setConclusaoDoModelo('');
-      }
+      setConclusaoDoModelo(extrairConclusaoDoHtml(textoFinal));
+      aplicarModeloNoEditor(textoFinal);
     } else {
       // FLUXO ANTIGO: Se é uma frase, processa normalmente
       setTexto(textoFinal);

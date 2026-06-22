@@ -883,10 +883,44 @@ const TextEditor = forwardRef(({
     };
   }, [editor, ultimaPosicaoDolar, processVolumeCalculation]); // Removido isRecording - agora gerenciado pelo hook
 
+  const applyContentToEditor = useCallback((next, { resetCursor = false } = {}) => {
+    if (!editor) return false;
+    const html = next || '';
+    try {
+      editor.commands.setContent(html, false);
+    } catch (error) {
+      console.error('[TextEditor] setContent falhou, tentando limpar e recarregar:', error);
+      try {
+        editor.commands.clearContent(false);
+        editor.commands.setContent(html, false);
+      } catch (fallbackError) {
+        console.error('[TextEditor] fallback setContent falhou:', fallbackError);
+        return false;
+      }
+    }
+    lastHtmlFromEditorRef.current = editor.getHTML();
+    if (typeof cursorPosition === 'number' && !resetCursor) {
+      const maxPos = editor.state.doc.content.size;
+      const safePos = Math.max(0, Math.min(cursorPosition, maxPos));
+      editor.chain().focus().setTextSelection(safePos).run();
+    } else if (resetCursor) {
+      editor.chain().focus().setTextSelection(0).run();
+    } else {
+      const { from, to } = editor.state.selection;
+      const maxPos = editor.state.doc.content.size;
+      const safeFrom = Math.max(0, Math.min(from, maxPos));
+      const safeTo = Math.max(0, Math.min(to, maxPos));
+      editor.chain().focus().setTextSelection({ from: safeFrom, to: safeTo }).run();
+    }
+    return true;
+  }, [editor, cursorPosition]);
+
   // Expõe o editor através da ref
   useImperativeHandle(ref, () => ({
-    editor
-  }));
+    editor,
+    /** Carrega HTML externo (ex.: modelo de laudo) sem disparar loop de onChange. */
+    setExternalContent: (html) => applyContentToEditor(html, { resetCursor: true }),
+  }), [editor, applyContentToEditor]);
 
   // Atualiza o conteúdo do editor quando a prop content mudar (modo controlado)
   useEffect(() => {
@@ -895,24 +929,9 @@ const TextEditor = forwardRef(({
     // Se a mudança veio do próprio editor, não reaplica setContent (evita resetar o cursor)
     if (next === lastHtmlFromEditorRef.current) return;
     if (next !== editor.getHTML()) {
-      editor.commands.setContent(next);
-
-      // Se cursorPosition for fornecido, posiciona o cursor lá
-      if (typeof cursorPosition === 'number') {
-        const maxPos = editor.state.doc.content.size;
-        const safePos = Math.max(0, Math.min(cursorPosition, maxPos));
-        editor.chain().focus().setTextSelection(safePos).run();
-      } else {
-        // Caso contrário, preserva seleção atual (comportamento padrão)
-        const { from, to } = editor.state.selection;
-        const maxPos = editor.state.doc.content.size;
-        const safeFrom = Math.max(0, Math.min(from, maxPos));
-        const safeTo = Math.max(0, Math.min(to, maxPos));
-        editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
-        editor.commands.focus();
-      }
+      applyContentToEditor(next);
     }
-  }, [content, editor, cursorPosition]);
+  }, [content, editor, applyContentToEditor]);
 
   // Configuração do auto-save
   useEffect(() => {
