@@ -15,12 +15,18 @@ import {
   useRef,
 } from 'react';
 import { Box } from '@mantine/core';
+import { createVariableRefSuggestionExtension } from './variableRefSuggestion';
 
 const LOCAL_TOKEN_RE = /^\[LOCAL: [^\]]+\]$/;
-const VAR_TOKEN_RE = /(\[LOCAL: [^\]]+\]|\{[^}]+\})/g;
+const REF_LOCAL_TOKEN_RE = /^\[REF: [^\]]+\]$/;
+const VAR_TOKEN_RE = /(\[REF: [^\]]+\]|\[LOCAL: [^\]]+\]|\{@[^{}]+\}|\{[^{}]+\})/g;
 
 function extractLocalLabel(fullToken) {
   return fullToken.slice(8, -1).trim();
+}
+
+function extractRefLocalLabel(fullToken) {
+  return fullToken.slice(6, -1).trim();
 }
 
 function tokenizeLine(line, payloadByDisplayRef) {
@@ -35,13 +41,25 @@ function tokenizeLine(line, payloadByDisplayRef) {
       content.push({ type: 'text', text: line.slice(last, match.index) });
     }
     const token = match[1];
-    if (LOCAL_TOKEN_RE.test(token)) {
+    if (REF_LOCAL_TOKEN_RE.test(token)) {
+      const label = extractRefLocalLabel(token);
+      content.push({
+        type: 'phraseVariable',
+        attrs: { variant: 'ref', refKind: 'local', titulo: label, label },
+      });
+    } else if (LOCAL_TOKEN_RE.test(token)) {
       const label = extractLocalLabel(token);
       const displayKey = `[LOCAL: ${label}]`;
       const payload = map?.get(displayKey) || '';
       content.push({
         type: 'phraseVariable',
         attrs: { variant: 'local', label, payload },
+      });
+    } else if (token.startsWith('{@') && token.endsWith('}')) {
+      const titulo = token.slice(2, -1);
+      content.push({
+        type: 'phraseVariable',
+        attrs: { variant: 'ref', refKind: 'global', titulo, label: titulo },
       });
     } else if (token.startsWith('{') && token.endsWith('}')) {
       const titulo = token.slice(1, -1);
@@ -91,7 +109,13 @@ export function serializeTipTapToDisplay(doc, payloadByDisplayRef) {
       }
       if (node.type.name === 'phraseVariable') {
         const v = node.attrs.variant;
-        if (v === 'global') {
+        if (v === 'ref') {
+          if (node.attrs.refKind === 'local') {
+            parts.push(`[REF: ${node.attrs.label || node.attrs.titulo}]`);
+          } else {
+            parts.push(`{@${node.attrs.titulo || node.attrs.label}}`);
+          }
+        } else if (v === 'global') {
           parts.push(`{${node.attrs.titulo}}`);
         } else if (map) {
           const display = `[LOCAL: ${node.attrs.label}]`;
@@ -108,12 +132,15 @@ function createPhraseVariableExtension(activateRef) {
   const ChipView = (props) => {
     const { node } = props;
     const variant = node.attrs.variant;
-    const label = variant === 'local' ? node.attrs.label : node.attrs.titulo;
-    /** Exibição só com o nome (storage e formato canônico seguem `{x}` / `[LOCAL: x]`) */
-    const displayLabel = label;
+    const isRef = variant === 'ref';
+    const label = variant === 'local' || (isRef && node.attrs.refKind === 'local')
+      ? node.attrs.label
+      : node.attrs.titulo;
+    const displayLabel = isRef ? `@${label}` : label;
     const isLocal = variant === 'local';
 
     const fire = () => {
+      if (isRef) return;
       activateRef.current?.({
         variant,
         label: node.attrs.label,
@@ -156,18 +183,23 @@ function createPhraseVariableExtension(activateRef) {
             padding: '2px 8px',
             borderRadius: '4px',
             border: '1px solid',
-            borderColor: isLocal
-              ? 'var(--mantine-color-yellow-8)'
-              : 'var(--mantine-color-blue-7)',
-            backgroundColor: isLocal
-              ? 'var(--mantine-color-yellow-1)'
-              : 'var(--mantine-color-blue-0)',
+            borderColor: isRef
+              ? 'var(--mantine-color-teal-8)'
+              : isLocal
+                ? 'var(--mantine-color-yellow-8)'
+                : 'var(--mantine-color-blue-7)',
+            backgroundColor: isRef
+              ? 'var(--mantine-color-teal-1)'
+              : isLocal
+                ? 'var(--mantine-color-yellow-1)'
+                : 'var(--mantine-color-blue-0)',
             color: 'var(--mantine-color-dark-7)',
             fontSize: '0.92em',
             fontWeight: 500,
-            cursor: 'pointer',
+            cursor: isRef ? 'default' : 'pointer',
             userSelect: 'none',
           }}
+          title={isRef ? `Referência de ${label}` : undefined}
         >
           {displayLabel}
         </span>
@@ -186,6 +218,7 @@ function createPhraseVariableExtension(activateRef) {
     addAttributes() {
       return {
         variant: { default: 'global' },
+        refKind: { default: '' },
         titulo: { default: '' },
         label: { default: '' },
         payload: { default: '' },
@@ -198,8 +231,15 @@ function createPhraseVariableExtension(activateRef) {
 
     renderHTML({ HTMLAttributes, node }) {
       const v = node.attrs.variant;
-      const label = v === 'local' ? node.attrs.label : node.attrs.titulo;
-      const text = v === 'local' ? `[LOCAL: ${label}]` : `{${label}}`;
+      const label = v === 'local' || node.attrs.refKind === 'local'
+        ? node.attrs.label
+        : node.attrs.titulo;
+      let text = `{${label}}`;
+      if (v === 'ref') {
+        text = node.attrs.refKind === 'local' ? `[REF: ${label}]` : `{@${label}}`;
+      } else if (v === 'local') {
+        text = `[LOCAL: ${label}]`;
+      }
       return [
         'span',
         mergeAttributes(
@@ -224,6 +264,7 @@ const FraseBaseTipTap = forwardRef(function FraseBaseTipTap(
     placeholder,
     onEditorReady,
     onVariableActivate,
+    variableCatalog = [],
     minHeight = 88,
   },
   ref,
@@ -231,11 +272,18 @@ const FraseBaseTipTap = forwardRef(function FraseBaseTipTap(
   const onVariableActivateRef = useRef(onVariableActivate);
   onVariableActivateRef.current = onVariableActivate;
 
+  const catalogRef = useRef(variableCatalog);
+  catalogRef.current = variableCatalog;
 
   const activateBridgeRef = useRef(null);
 
   const phraseVariableExt = useMemo(
     () => createPhraseVariableExtension(activateBridgeRef),
+    [],
+  );
+
+  const suggestionExt = useMemo(
+    () => createVariableRefSuggestionExtension(catalogRef),
     [],
   );
 
@@ -256,6 +304,7 @@ const FraseBaseTipTap = forwardRef(function FraseBaseTipTap(
         hardBreak: true,
       }),
       phraseVariableExt,
+      suggestionExt,
     ],
     content: parseDisplayToTipTapDoc(value, localMapRef),
     editorProps: {

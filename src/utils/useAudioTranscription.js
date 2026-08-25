@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
+import { useWhisperRecording } from './useWhisperRecording';
+import { editorTemFoco, registerSpeechStopper, stopOtherSpeechSessions } from './speechSessionRegistry';
+
+/**
+ * Motor de speech-to-text em teste.
+ * 'whisper' = Groq whisper-large-v3-turbo
+ * 'google'  = Web Speech API original (código abaixo permanece intacto)
+ */
+export const SPEECH_TO_TEXT_ENGINE = 'google';
+// Para voltar ao Google, troque para 'google' e recarregue a página.
 
 /**
  * Hook customizado para transcrição de áudio para texto com reconhecimento de voz
@@ -8,9 +18,11 @@ import api from '../api';
  * @param {Object} options.editor - Instância do editor TipTap (opcional, para TextEditor)
  * @param {string} options.textoState - Estado do texto atual (opcional, para textarea)
  * @param {Function} options.setTextoState - Função para atualizar o estado do texto (opcional, para textarea)
- * @param {string} options.atalhoTeclado - Atalho de teclado para iniciar/parar gravação (padrão: 'Shift+A')
+ * @param {string} options.atalhoTeclado - Atalho de teclado para iniciar/parar gravação (padrão: 'Escape')
  * @param {number} options.pauseDelay - Tempo de pausa em ms antes de inserir texto (padrão: 2000ms = 2s)
  * @param {Function} options.onTranscriptionComplete - Callback executado quando a transcrição é concluída
+ * @param {string} options.speechEngine - 'whisper' | 'google' (padrão: SPEECH_TO_TEXT_ENGINE)
+ * @param {boolean} options.atalhoSomenteSeFocado - Se true, o atalho só liga/desliga neste campo se o cursor estiver nele
  * 
  * @returns {Object} - Objeto com estados e funções para controle da transcrição
  */
@@ -21,7 +33,9 @@ export const useAudioTranscription = ({
   atalhoTeclado = 'Escape',
   // atalhoTeclado = 'Ctrl+Shift+Q',
   pauseDelay = 2000,
-  onTranscriptionComplete = null
+  onTranscriptionComplete = null,
+  speechEngine = SPEECH_TO_TEXT_ENGINE,
+  atalhoSomenteSeFocado = false,
 } = {}) => {
   // Estados
   const [isRecording, setIsRecording] = useState(false);
@@ -36,6 +50,12 @@ export const useAudioTranscription = ({
   const isRecordingRef = useRef(isRecording);
   const pauseTimerRef = useRef(null); // Timer para detectar pausa
   const accumulatedTextRef = useRef(''); // Texto acumulado
+  const stopRecordingRef = useRef(() => {});
+  const sessionStopperRef = useRef(() => {
+    if (isRecordingRef.current) {
+      stopRecordingRef.current();
+    }
+  });
 
   // Atualiza refs quando os valores mudam
   useEffect(() => {
@@ -44,6 +64,10 @@ export const useAudioTranscription = ({
     setTextoStateRef.current = setTextoState;
     isRecordingRef.current = isRecording;
   }, [editor, textoState, setTextoState, isRecording]);
+
+  useEffect(() => {
+    return registerSpeechStopper(sessionStopperRef.current);
+  }, []);
 
   /**
    * Adiciona pontuação ao texto baseado em comandos de voz
@@ -208,10 +232,36 @@ export const useAudioTranscription = ({
     setPreviewText('');
   }, [adicionarPontuacao, onTranscriptionComplete, corrigirTextoComGroq]);
 
+  const {
+    toggleWhisperRecording,
+    stopWhisperRecording,
+    startWhisperRecording,
+    flushWhisperSegment,
+  } = useWhisperRecording({
+    enabled: speechEngine === 'whisper',
+    pauseDelay,
+    isRecording,
+    setIsRecording,
+    isRecordingRef,
+    accumulatedTextRef,
+    setPreviewText,
+    insertAccumulatedText,
+    editorRef,
+  });
+
   /**
    * Alterna o estado de gravação (inicia ou para)
    */
   const toggleRecording = useCallback(() => {
+    if (!isRecording) {
+      stopOtherSpeechSessions(sessionStopperRef.current);
+    }
+
+    if (speechEngine === 'whisper') {
+      toggleWhisperRecording();
+      return;
+    }
+
     // console.log('🎤 toggleRecording chamado. isRecording:', isRecording, 'recognition:', recognition);
     
     if (!recognition) {
@@ -268,12 +318,17 @@ export const useAudioTranscription = ({
         setIsRecording(false);
       }
     }
-  }, [recognition, isRecording, insertAccumulatedText]);
+  }, [speechEngine, toggleWhisperRecording, recognition, isRecording, insertAccumulatedText]);
 
   /**
    * Para a gravação (útil para chamar externamente)
    */
   const stopRecording = useCallback(() => {
+    if (speechEngine === 'whisper') {
+      stopWhisperRecording();
+      return;
+    }
+
     if (isRecording && recognition) {
       // Cancela timer se houver
       if (pauseTimerRef.current) {
@@ -292,12 +347,25 @@ export const useAudioTranscription = ({
       setPreviewText('');
       accumulatedTextRef.current = '';
     }
-  }, [isRecording, recognition, insertAccumulatedText]);
+  }, [speechEngine, stopWhisperRecording, isRecording, recognition, insertAccumulatedText]);
+
+  stopRecordingRef.current = stopRecording;
 
   /**
    * Inicia a gravação (útil para chamar externamente)
    */
   const startRecording = useCallback(() => {
+    if (isRecording) {
+      return;
+    }
+
+    stopOtherSpeechSessions(sessionStopperRef.current);
+
+    if (speechEngine === 'whisper') {
+      startWhisperRecording();
+      return;
+    }
+
     if (!isRecording && recognition) {
       try {
         paradaIntencionalRef.current = false;
@@ -315,10 +383,15 @@ export const useAudioTranscription = ({
         setIsRecording(false);
       }
     }
-  }, [isRecording, recognition]);
+  }, [speechEngine, startWhisperRecording, isRecording, recognition]);
 
   // Configuração do reconhecimento de voz com a NOVA ESTRATÉGIA
+  // Motor Google (Web Speech API) — código original, inalterado
   useEffect(() => {
+    if (speechEngine !== 'google') {
+      return undefined;
+    }
+
     // console.log('🔧 Configurando reconhecimento de voz com estratégia de pausa...');
     // console.log('⏱️ Tempo de pausa configurado:', pauseDelay, 'ms');
     
@@ -565,12 +638,19 @@ export const useAudioTranscription = ({
         }
       }
     };
-  }, [pauseDelay, insertAccumulatedText]);
+  }, [speechEngine, pauseDelay, insertAccumulatedText]);
 
   // Atalhos de teclado para gravar/parar áudio e inserir texto
   useEffect(() => {
     const handleKeyDown = (event) => {
       // ✅ NOVO: Enter durante gravação = insere texto imediatamente
+      if (event.key === 'Enter' && isRecordingRef.current && speechEngine === 'whisper') {
+        if (flushWhisperSegment()) {
+          event.preventDefault();
+        }
+        return;
+      }
+
       if (event.key === 'Enter' && isRecordingRef.current && accumulatedTextRef.current.trim()) {
         // console.log('⏎ Enter pressionado - inserindo texto imediatamente');
         event.preventDefault();
@@ -619,8 +699,14 @@ export const useAudioTranscription = ({
         if (event.altKey) atalhoMatch = false;
       }
       
-      // Verifica a tecla principal
-      if (atalhoMatch && event.key.toLowerCase() === teclaPrincipal) {
+      // Verifica a tecla principal (key ou code — Ctrl+Alt pode alterar event.key)
+      const teclaPressionada = (event.key || '').toLowerCase();
+      const codeEsperado = `key${teclaPrincipal}`;
+      const codeMatch = (event.code || '').toLowerCase() === codeEsperado;
+      if (atalhoMatch && (teclaPressionada === teclaPrincipal || codeMatch)) {
+        if (atalhoSomenteSeFocado && !editorTemFoco(editorRef.current)) {
+          return;
+        }
         event.preventDefault();
         toggleRecording();
       }
@@ -633,7 +719,7 @@ export const useAudioTranscription = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [toggleRecording, atalhoTeclado, insertAccumulatedText]);
+  }, [toggleRecording, atalhoTeclado, insertAccumulatedText, speechEngine, flushWhisperSegment, atalhoSomenteSeFocado]);
 
   return {
     // Estados
@@ -646,6 +732,7 @@ export const useAudioTranscription = ({
     stopRecording,
     startRecording,
     adicionarPontuacao,
+    speechEngine,
   };
 };
 

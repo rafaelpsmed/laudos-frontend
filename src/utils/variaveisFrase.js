@@ -18,28 +18,78 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function ehChaveVariavelLocal(chave) {
+  return chave.startsWith('{') && (
+    chave.includes('"tipo":"variavelLocal"') || chave.includes('"tipo":variavelLocal')
+  );
+}
+
+function substituirChaveExata(texto, chave, valor) {
+  return texto.replace(new RegExp(escapeRegExp(chave), 'g'), valor);
+}
+
+function tituloDeBlobLocal(jsonString) {
+  try {
+    const estrutura = JSON.parse(jsonString);
+    return String(estrutura.label || estrutura.titulo || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function valorDefinicaoGlobal(titulo, variaveisNormais, variaveisPorTitulo) {
+  const instancias = variaveisPorTitulo[titulo];
+  if (Array.isArray(instancias)) {
+    const primeiro = instancias.find((v) => v !== undefined);
+    if (primeiro !== undefined) return primeiro;
+  }
+  if (Object.prototype.hasOwnProperty.call(variaveisNormais, titulo)) {
+    return variaveisNormais[titulo];
+  }
+  return undefined;
+}
+
+function aplicarReferenciasNoTexto(texto, { variaveisNormais, variaveisPorTitulo, blobsLocais }) {
+  let out = texto;
+  out = out.replace(/\{@([^{}]+)\}/g, (full, tituloBruto) => {
+    const titulo = String(tituloBruto || '').trim();
+    const valor = valorDefinicaoGlobal(titulo, variaveisNormais, variaveisPorTitulo);
+    return valor !== undefined ? valor : full;
+  });
+  out = out.replace(/\[REF: ([^\]]+)\]/g, (full, tituloBruto) => {
+    const titulo = String(tituloBruto || '').trim();
+    const encontrado = blobsLocais.find(([json]) => tituloDeBlobLocal(json) === titulo);
+    return encontrado ? encontrado[1] : full;
+  });
+  return out;
+}
+
+function aplicarMedidasNoTexto(texto, valor) {
+  if (Array.isArray(valor)) {
+    let i = 0;
+    return texto.replace(/\$/g, () => {
+      const v = valor[i++];
+      return v !== undefined && String(v).trim() !== '' ? String(v) : '$';
+    });
+  }
+  return texto.replace(/\$/g, valor);
+}
+
 export function aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSelecionados) {
   let textoFinal = textoTemporario;
   const variaveisPorTitulo = {};
   const variaveisNormais = {};
+  const blobsLocais = [];
+  const gruposAntigos = [];
+  let medidas = undefined;
 
   Object.entries(valoresSelecionados).forEach(([chave, valor]) => {
     if (chave === '$') {
-      if (Array.isArray(valor)) {
-        let i = 0;
-        textoFinal = textoFinal.replace(/\$/g, () => {
-          const v = valor[i++];
-          return v !== undefined && String(v).trim() !== '' ? String(v) : '$';
-        });
-      } else {
-        textoFinal = textoFinal.replace(/\$/g, valor);
-      }
+      medidas = valor;
+    } else if (ehChaveVariavelLocal(chave)) {
+      blobsLocais.push([chave, valor]);
     } else if (chave.includes('//')) {
-      const regex = new RegExp(escapeRegExp(chave), 'g');
-      textoFinal = textoFinal.replace(regex, valor);
-    } else if (chave.startsWith('{') && (chave.includes('"tipo":"variavelLocal"') || chave.includes('"tipo":variavelLocal'))) {
-      const regex = new RegExp(escapeRegExp(chave), 'g');
-      textoFinal = textoFinal.replace(regex, valor);
+      gruposAntigos.push([chave, valor]);
     } else if (chave.includes('_') && /^.+_\d+$/.test(chave)) {
       const partes = chave.split('_');
       const instanciaIndex = parseInt(partes[partes.length - 1], 10);
@@ -51,6 +101,14 @@ export function aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSeleci
     } else {
       variaveisNormais[chave] = valor;
     }
+  });
+
+  blobsLocais.forEach(([chave, valor]) => {
+    textoFinal = substituirChaveExata(textoFinal, chave, valor);
+  });
+
+  gruposAntigos.forEach(([chave, valor]) => {
+    textoFinal = substituirChaveExata(textoFinal, chave, valor);
   });
 
   Object.entries(variaveisNormais).forEach(([chave, valor]) => {
@@ -67,6 +125,16 @@ export function aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSeleci
       return v !== undefined ? v : match;
     });
   });
+
+  textoFinal = aplicarReferenciasNoTexto(textoFinal, {
+    variaveisNormais,
+    variaveisPorTitulo,
+    blobsLocais,
+  });
+
+  if (medidas !== undefined) {
+    textoFinal = aplicarMedidasNoTexto(textoFinal, medidas);
+  }
 
   return textoFinal;
 }
@@ -204,6 +272,9 @@ export async function buscarVariaveisNoTexto(texto, frase = null) {
       
       while ((match = regexVariaveis.exec(textoPuro)) !== null) {
         const tituloVariavel = match[1];
+        if (String(tituloVariavel).startsWith('@')) {
+          continue;
+        }
         // Procura a variável pelo título exato
         const variavel = todasVariaveis.find(v => v.tituloVariavel === tituloVariavel);
         

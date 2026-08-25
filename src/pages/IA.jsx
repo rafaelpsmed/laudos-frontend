@@ -70,7 +70,7 @@ function IA() {
     } = useAudioTranscription({
         textoState: textoAnalise,
         setTextoState: setTextoAnalise,
-        atalhoTeclado: 'Shift+A',
+        atalhoTeclado: 'Ctrl+Alt+A',
         pauseDelay: 2000
     });
 
@@ -1042,7 +1042,7 @@ function IA() {
                                         variant={isRecordingAudio ? 'filled' : 'subtle'}
                                         color={isRecordingAudio ? 'red' : 'blue'}
                                         onClick={toggleRecordingAudio}
-                                        title="Atalho: Shift+A"
+                                        title="Atalho: Ctrl+Alt+A"
                                         disabled={isGeneratingAnalise}
                                         style={{
                                             position: 'absolute',

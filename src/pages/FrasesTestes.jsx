@@ -1,13 +1,11 @@
-import { Group, Stack, Grid, Combobox, Input, Textarea, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Paper, ActionIcon, Select } from '@mantine/core';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconMicrophone, IconMicrophoneOff, IconHelp, IconGripVertical } from '@tabler/icons-react';
+import { Group, Stack, Grid, Combobox, Input, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Select } from '@mantine/core';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconHelp, IconGripVertical } from '@tabler/icons-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { jwtDecode } from "jwt-decode";
 import { ACCESS_TOKEN } from '../constants';
 import api from '../api';
-import { useAudioTranscription } from '../utils/useAudioTranscription';
-
 // Componentes reutilizáveis
 import MetodosSelect from '../components/MetodosSelect';
 import MetodosSelectFrases from '../components/MetodosSelectFrases';
@@ -15,7 +13,8 @@ import TituloCombobox from '../components/TituloCombobox';
 import TextEditor from '../components/TextEditor';
 import Layout from '../components/Layout';
 import VariaveisModal from '../components/VariaveisModal';
-import FraseBaseTipTap from '../components/FraseBaseTipTap';
+import FraseCampoComAudio from '../components/FraseCampoComAudio';
+import { extrairCatalogoVariaveisDefinicao } from '../utils/catalogoVariaveisFrase';
 import { notifications } from '@mantine/notifications';
 
 function FrasesTestes() {
@@ -48,8 +47,7 @@ function FrasesTestes() {
   const [tituloVariavelPrecarregarModal, setTituloVariavelPrecarregarModal] = useState('');
   const [variaveisModalKey, setVariaveisModalKey] = useState(0);
   const [modalVariavelLocalAberto, setModalVariavelLocalAberto] = useState(false);
-  const [opcoesVariavelLocal, setOpcoesVariavelLocal] = useState(''); // Mantido para compatibilidade com formato antigo
-  // Estados para variável local completa (novo formato)
+  // Estados para variável local completa
   const [variavelLocalTipoControle, setVariavelLocalTipoControle] = useState('');
   const [variavelLocalTitulo, setVariavelLocalTitulo] = useState('');
   const [variavelLocalLabel, setVariavelLocalLabel] = useState('');
@@ -73,8 +71,6 @@ function FrasesTestes() {
   const fraseBaseTipTapSemModeloRef = useRef(null);
   const variavelEditPosComModeloRef = useRef(null);
   const variavelEditPosSemModeloRef = useRef(null);
-  const [speechEditorComModelo, setSpeechEditorComModelo] = useState(null);
-  const [speechEditorSemModelo, setSpeechEditorSemModelo] = useState(null);
 
   /** Substitui JSON de variável local por `[LOCAL: …]` e atualiza `mapeamentoVariaveisLocaisRef` — sem limpar o mapa (para vários campos). */
   const formatarUmTextoVariaveisLocais = (texto) => {
@@ -280,34 +276,45 @@ function FrasesTestes() {
   const comboboxCategoriaSemModelo = useCombobox();
   const comboboxTituloFraseSemModelo = useCombobox();
 
-  // ✅ Hooks de transcrição de áudio para os campos "Frase Base"
-  // Hook para "Frases com Modelo"
-  const {
-    isRecording: isRecordingComModelo,
-    previewText: previewTextComModelo,
-    toggleRecording: toggleRecordingComModelo
-  } = useAudioTranscription({
-    editor: speechEditorComModelo,
-    textoState: fraseBase,
-    setTextoState: setFraseBase,
-    atalhoTeclado: 'Shift+A',
-    pauseDelay: 2000
-  });
+  const catalogoComModelo = useMemo(
+    () =>
+      extrairCatalogoVariaveisDefinicao(
+        fraseBase,
+        substituicaoFraseBase,
+        conclusao,
+        procurarPor,
+        substituirPor,
+        ...substituicoesOutras.flatMap((s) => [s.procurarPor, s.substituirPor]),
+      ),
+    [
+      fraseBase,
+      substituicaoFraseBase,
+      conclusao,
+      procurarPor,
+      substituirPor,
+      substituicoesOutras,
+    ],
+  );
 
-  // Hook para "Frases sem Modelo"
-  const {
-    isRecording: isRecordingSemModelo,
-    previewText: previewTextSemModelo,
-    toggleRecording: toggleRecordingSemModelo
-  } = useAudioTranscription({
-    editor: speechEditorSemModelo,
-    textoState: fraseBaseSemModelo,
-    setTextoState: setFraseBaseSemModelo,
-    atalhoTeclado: 'Shift+A',
-    pauseDelay: 2000
-  });
-
-
+  const catalogoSemModelo = useMemo(
+    () =>
+      extrairCatalogoVariaveisDefinicao(
+        fraseBaseSemModelo,
+        substituicaoFraseBaseSemModelo,
+        conclusaoSemModelo,
+        procurarPorSemModelo,
+        substituirPorSemModelo,
+        ...substituicoesOutrasSemModelo.flatMap((s) => [s.procurarPor, s.substituirPor]),
+      ),
+    [
+      fraseBaseSemModelo,
+      substituicaoFraseBaseSemModelo,
+      conclusaoSemModelo,
+      procurarPorSemModelo,
+      substituirPorSemModelo,
+      substituicoesOutrasSemModelo,
+    ],
+  );
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -1507,7 +1514,6 @@ function FrasesTestes() {
     setVariavelLocalTextoOriginal('');
     variavelEditPosComModeloRef.current = null;
     variavelEditPosSemModeloRef.current = null;
-    // Mantém opcoesVariavelLocal para compatibilidade com formato antigo
   };
 
   // Função para extrair dados de uma variável local formatada
@@ -1644,6 +1650,7 @@ function FrasesTestes() {
   };
 
   const handleVariavelChipComModelo = (ctx) => {
+    if (ctx.variant === 'ref') return;
     if (ctx.variant === 'global') {
       abrirModalEdicaoVariavelGlobalDesdeChip(ctx, true);
       return;
@@ -1652,66 +1659,12 @@ function FrasesTestes() {
   };
 
   const handleVariavelChipSemModelo = (ctx) => {
+    if (ctx.variant === 'ref') return;
     if (ctx.variant === 'global') {
       abrirModalEdicaoVariavelGlobalDesdeChip(ctx, false);
       return;
     }
     abrirModalVariavelChipLocal(ctx, false);
-  };
-
-  // Função para editar variável local selecionada
-  const handleEditarVariavelLocalSelecionada = () => {
-    const handler = localStorage.getItem('variavelHandler');
-    const textoAtual = handler === 'semModelo' ? fraseBaseSemModelo : fraseBase;
-    const tipRef =
-      handler === 'semModelo'
-        ? fraseBaseTipTapSemModeloRef
-        : fraseBaseTipTapComModeloRef;
-
-    const sel = tipRef.current?.tryEditSelectedLocalVariavel();
-    if (!sel) {
-      alert(
-        'Coloque o cursor imediatamente antes do chip amarelo da variável local e use este botão, ou clique no chip.',
-      );
-      return;
-    }
-
-    const textoAtualCompleto = converterTextoDeVolta(textoAtual);
-    formatarTextoParaExibicao(textoAtualCompleto);
-    const textoSelecionado = `[LOCAL: ${sel.label}]`;
-    const displaySel = textoSelecionado;
-    if (sel.payload) {
-      mapeamentoVariaveisLocaisRef.current.set(displaySel, sel.payload);
-    }
-
-    const dados = extrairDadosVariavelLocal(textoSelecionado);
-
-    if (!dados) {
-      alert(
-        'Não foi possível editar esta variável local.',
-      );
-      return;
-    }
-
-    if (handler === 'semModelo') {
-      variavelEditPosSemModeloRef.current = sel.pos;
-      variavelEditPosComModeloRef.current = null;
-    } else {
-      variavelEditPosComModeloRef.current = sel.pos;
-      variavelEditPosSemModeloRef.current = null;
-    }
-
-    setVariavelLocalTipoControle(dados.estruturaVariavel.controle || dados.tipo || '');
-    setVariavelLocalTitulo(dados.estruturaVariavel.titulo || '');
-    setVariavelLocalLabel(dados.estruturaVariavel.label || '');
-    setVariavelLocalValores(dados.estruturaVariavel.valores || []);
-    setVariavelLocalDelimitador(dados.estruturaVariavel.delimitador || '');
-    setVariavelLocalUltimoDelimitador(dados.estruturaVariavel.ultimoDelimitador || '');
-
-    setEditandoVariavelLocal(true);
-    setVariavelLocalTextoOriginal(textoSelecionado);
-
-    setModalVariavelLocalAberto(true);
   };
 
   // Função para formatar e inserir variável local completa
@@ -1809,46 +1762,6 @@ function FrasesTestes() {
     // Fecha o modal e limpa os campos
     setModalVariavelLocalAberto(false);
     handleClearVariavelLocal();
-    setOpcoesVariavelLocal(''); // Limpa também o campo antigo
-    localStorage.removeItem('variavelHandler');
-  };
-
-  // Função para compatibilidade com formato antigo [opcao1//opcao2]
-  const handleAdicionarVariavelLocal = () => {
-    // Se tem valores completos no formato novo, usa o formato novo
-    if (variavelLocalTipoControle && variavelLocalValores.length > 0 && variavelLocalTitulo.trim()) {
-      handleAdicionarVariavelLocalCompleta();
-      return;
-    }
-
-    // Caso contrário, usa formato antigo
-    if (!opcoesVariavelLocal.trim()) {
-      alert('Por favor, preencha o formato novo ou o formato antigo.');
-      return;
-    }
-
-    // Divide as linhas e remove linhas vazias
-    const opcoes = opcoesVariavelLocal
-      .split('\n')
-      .map(linha => linha.trim())
-      .filter(linha => linha.length > 0);
-
-    if (opcoes.length === 0) return;
-
-    // Formata as opções no formato [opcao1//opcao2//opcao3]
-    const variavelFormatada = `[${opcoes.join('//')}]`;
-
-    const handler = localStorage.getItem('variavelHandler');
-
-    if (handler === 'semModelo') {
-      fraseBaseTipTapSemModeloRef.current?.insertPlainText(variavelFormatada);
-    } else {
-      fraseBaseTipTapComModeloRef.current?.insertPlainText(variavelFormatada);
-    }
-    
-    // Fecha o modal e limpa o campo
-    setModalVariavelLocalAberto(false);
-    setOpcoesVariavelLocal('');
     localStorage.removeItem('variavelHandler');
   };
 
@@ -1953,43 +1866,18 @@ function FrasesTestes() {
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
-                    Enter cria nova linha. Chips mostram só o nome: amarelo = variável local; azul = variável global.
+                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@). Digite @ para reutilizar uma variável já inserida.
                   </Text>
-                  <div style={{ position: 'relative' }}>
-                    <FraseBaseTipTap
-                      ref={fraseBaseTipTapComModeloRef}
-                      value={fraseBase}
-                      onChange={setFraseBase}
-                      localMapRef={mapeamentoVariaveisLocaisRef}
-                      placeholder="Digite a frase base"
-                      onEditorReady={setSpeechEditorComModelo}
-                      onVariableActivate={handleVariavelChipComModelo}
-                      minHeight={88}
-                    />
-                    <ActionIcon
-                      size="md"
-                      variant={isRecordingComModelo ? "filled" : "subtle"}
-                      color={isRecordingComModelo ? "red" : "blue"}
-                      onClick={toggleRecordingComModelo}
-                      title="Atalho: Shift+A | Inserção rápida: Enter"
-                      style={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        zIndex: 10
-                      }}
-                    >
-                      {isRecordingComModelo ? <IconMicrophoneOff size={18} /> : <IconMicrophone size={18} />}
-                    </ActionIcon>
-                  </div>
-                  {/* Preview do texto sendo gravado */}
-                  {previewTextComModelo && (
-                    <Paper p="xs" bg="blue.0" withBorder>
-                      <Text size="xs" c="blue.7" fw={500}>
-                        Gravando: {previewTextComModelo}
-                      </Text>
-                    </Paper>
-                  )}
+                  <FraseCampoComAudio
+                    ref={fraseBaseTipTapComModeloRef}
+                    value={fraseBase}
+                    onChange={setFraseBase}
+                    localMapRef={mapeamentoVariaveisLocaisRef}
+                    variableCatalog={catalogoComModelo}
+                    placeholder="Digite a frase base"
+                    onVariableActivate={handleVariavelChipComModelo}
+                    minHeight={88}
+                  />
                 </Stack>
 
                 <Group justify="flex-end" align="center" mt="md">
@@ -2016,19 +1904,6 @@ function FrasesTestes() {
                       Inserir Variável Local
                     </Button>
                   </Tooltip>
-                  <Tooltip label="Coloque o cursor antes do chip amarelo da variável local ou clique no chip.">
-                    <Button 
-                      variant="light" 
-                      color="orange"
-                      leftSection={<IconEdit size={20} />}
-                      onClick={() => {
-                        localStorage.setItem('variavelHandler', 'comModelo');
-                        handleEditarVariavelLocalSelecionada();
-                      }}
-                    >
-                      Editar Variável Local Selecionada
-                    </Button>
-                  </Tooltip>
                 </Group>
 
                 <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
@@ -2036,11 +1911,12 @@ function FrasesTestes() {
                     <Text size="xs" c="dimmed">
                       Mesmo editor da frase base (variáveis e nova linha com Enter).
                     </Text>
-                    <FraseBaseTipTap
+                    <FraseCampoComAudio
                       key={`subst-base-com-${fraseId ?? 'novo'}`}
                       value={substituicaoFraseBase}
                       onChange={setSubstituicaoFraseBase}
                       localMapRef={mapeamentoVariaveisLocaisRef}
+                      variableCatalog={catalogoComModelo}
                       placeholder="Digite o texto a ser substituído"
                       onVariableActivate={handleVariavelChipComModelo}
                       minHeight={72}
@@ -2053,11 +1929,12 @@ function FrasesTestes() {
                 <Input.Wrapper label="Procurar Por">
                   <Stack gap={4}>
                     <Text size="xs" c="dimmed">Texto literal a localizar no laudo (TipTap só para facilitar variáveis).</Text>
-                    <FraseBaseTipTap
+                    <FraseCampoComAudio
                       key={`procurar-com-${fraseId ?? 'novo'}`}
                       value={procurarPor}
                       onChange={setProcurarPor}
                       localMapRef={mapeamentoVariaveisLocaisRef}
+                      variableCatalog={catalogoComModelo}
                       placeholder="Digite o texto a ser procurado"
                       onVariableActivate={handleVariavelChipComModelo}
                       minHeight={72}
@@ -2067,11 +1944,12 @@ function FrasesTestes() {
 
                 <Input.Wrapper label="Substituir Por">
                   <Stack gap={4}>
-                    <FraseBaseTipTap
+                    <FraseCampoComAudio
                       key={`substpor-com-${fraseId ?? 'novo'}`}
                       value={substituirPor}
                       onChange={setSubstituirPor}
                       localMapRef={mapeamentoVariaveisLocaisRef}
+                      variableCatalog={catalogoComModelo}
                       placeholder="Digite o texto para substituição"
                       onVariableActivate={handleVariavelChipComModelo}
                       minHeight={72}
@@ -2143,11 +2021,12 @@ function FrasesTestes() {
                 <Stack gap={4}>
                   <Input.Label>Conclusão</Input.Label>
                   <Text size="xs" c="dimmed">Opcional. Variáveis com o mesmo editor da frase base.</Text>
-                  <FraseBaseTipTap
+                  <FraseCampoComAudio
                     key={`conclusao-com-${fraseId ?? 'novo'}`}
                     value={conclusao}
                     onChange={setConclusao}
                     localMapRef={mapeamentoVariaveisLocaisRef}
+                    variableCatalog={catalogoComModelo}
                     placeholder="Digite a conclusão"
                     onVariableActivate={handleVariavelChipComModelo}
                     minHeight={72}
@@ -2278,43 +2157,18 @@ function FrasesTestes() {
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
-                    Enter cria nova linha. Chips mostram só o nome: amarelo = variável local; azul = variável global.
+                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@). Digite @ para reutilizar uma variável já inserida.
                   </Text>
-                  <div style={{ position: 'relative' }}>
-                    <FraseBaseTipTap
-                      ref={fraseBaseTipTapSemModeloRef}
-                      value={fraseBaseSemModelo}
-                      onChange={setFraseBaseSemModelo}
-                      localMapRef={mapeamentoVariaveisLocaisRef}
-                      placeholder="Digite a frase base"
-                      onEditorReady={setSpeechEditorSemModelo}
-                      onVariableActivate={handleVariavelChipSemModelo}
-                      minHeight={88}
-                    />
-                    <ActionIcon
-                      size="md"
-                      variant={isRecordingSemModelo ? "filled" : "subtle"}
-                      color={isRecordingSemModelo ? "red" : "blue"}
-                      onClick={toggleRecordingSemModelo}
-                      title="Atalho: Shift+A | Inserção rápida: Enter"
-                      style={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        zIndex: 10
-                      }}
-                    >
-                      {isRecordingSemModelo ? <IconMicrophoneOff size={18} /> : <IconMicrophone size={18} />}
-                    </ActionIcon>
-                  </div>
-                  {/* Preview do texto sendo gravado */}
-                  {previewTextSemModelo && (
-                    <Paper p="xs" bg="blue.0" withBorder>
-                      <Text size="xs" c="blue.7" fw={500}>
-                        Gravando: {previewTextSemModelo}
-                      </Text>
-                    </Paper>
-                  )}
+                  <FraseCampoComAudio
+                    ref={fraseBaseTipTapSemModeloRef}
+                    value={fraseBaseSemModelo}
+                    onChange={setFraseBaseSemModelo}
+                    localMapRef={mapeamentoVariaveisLocaisRef}
+                    variableCatalog={catalogoSemModelo}
+                    placeholder="Digite a frase base"
+                    onVariableActivate={handleVariavelChipSemModelo}
+                    minHeight={88}
+                  />
                 </Stack>
 
                 <Group justify="flex-end" align="center" mt="md">
@@ -2339,19 +2193,6 @@ function FrasesTestes() {
                       Inserir Variável Local
                     </Button>
                   </Tooltip>
-                  {/* <Tooltip label="Coloque o cursor antes do chip amarelo da variável local ou clique no chip.">
-                    <Button 
-                      variant="light" 
-                      color="orange"
-                      leftSection={<IconEdit size={20} />}
-                      onClick={() => {
-                        localStorage.setItem('variavelHandler', 'semModelo');
-                        handleEditarVariavelLocalSelecionada();
-                      }}
-                    >
-                      Editar Variável Local Selecionada
-                    </Button>
-                  </Tooltip> */}
                 </Group>
 
                 <Input.Wrapper label="Substituição Frase Base" description="Digite o texto a ser substituído no laudo pela frase base">
@@ -2359,11 +2200,12 @@ function FrasesTestes() {
                     <Text size="xs" c="dimmed">
                       Mesmo editor da frase base (variáveis e nova linha com Enter).
                     </Text>
-                    <FraseBaseTipTap
+                    <FraseCampoComAudio
                       key={`subst-base-sem-${fraseIdSemModelo ?? 'novo'}`}
                       value={substituicaoFraseBaseSemModelo}
                       onChange={setSubstituicaoFraseBaseSemModelo}
                       localMapRef={mapeamentoVariaveisLocaisRef}
+                      variableCatalog={catalogoSemModelo}
                       placeholder="Digite o texto a ser substituído"
                       onVariableActivate={handleVariavelChipSemModelo}
                       minHeight={72}
@@ -2376,11 +2218,12 @@ function FrasesTestes() {
                 <Input.Wrapper label="Procurar Por">
                   <Stack gap={4}>
                     <Text size="xs" c="dimmed">Texto literal a localizar no laudo (TipTap só para facilitar variáveis).</Text>
-                    <FraseBaseTipTap
+                    <FraseCampoComAudio
                       key={`procurar-sem-${fraseIdSemModelo ?? 'novo'}`}
                       value={procurarPorSemModelo}
                       onChange={setProcurarPorSemModelo}
                       localMapRef={mapeamentoVariaveisLocaisRef}
+                      variableCatalog={catalogoSemModelo}
                       placeholder="Digite o texto a ser procurado"
                       onVariableActivate={handleVariavelChipSemModelo}
                       minHeight={72}
@@ -2390,11 +2233,12 @@ function FrasesTestes() {
 
                 <Input.Wrapper label="Substituir Por">
                   <Stack gap={4}>
-                    <FraseBaseTipTap
+                    <FraseCampoComAudio
                       key={`substpor-sem-${fraseIdSemModelo ?? 'novo'}`}
                       value={substituirPorSemModelo}
                       onChange={setSubstituirPorSemModelo}
                       localMapRef={mapeamentoVariaveisLocaisRef}
+                      variableCatalog={catalogoSemModelo}
                       placeholder="Digite o texto para substituição"
                       onVariableActivate={handleVariavelChipSemModelo}
                       minHeight={72}
@@ -2466,11 +2310,12 @@ function FrasesTestes() {
                 <Stack gap={4}>
                   <Input.Label>Conclusão</Input.Label>
                   <Text size="xs" c="dimmed">Opcional. Variáveis com o mesmo editor da frase base.</Text>
-                  <FraseBaseTipTap
+                  <FraseCampoComAudio
                     key={`conclusao-sem-${fraseIdSemModelo ?? 'novo'}`}
                     value={conclusaoSemModelo}
                     onChange={setConclusaoSemModelo}
                     localMapRef={mapeamentoVariaveisLocaisRef}
+                    variableCatalog={catalogoSemModelo}
                     placeholder="Digite a conclusão"
                     onVariableActivate={handleVariavelChipSemModelo}
                     minHeight={72}
@@ -2573,7 +2418,6 @@ function FrasesTestes() {
         onClose={() => {
           setModalVariavelLocalAberto(false);
           handleClearVariavelLocal();
-          setOpcoesVariavelLocal('');
           localStorage.removeItem('variavelHandler');
         }}
         title={editandoVariavelLocal ? "Editar Variável Local" : "Criar Variável Local"}
@@ -2774,7 +2618,6 @@ function FrasesTestes() {
                   onClick={() => {
                     setModalVariavelLocalAberto(false);
                     handleClearVariavelLocal();
-                    setOpcoesVariavelLocal('');
                     localStorage.removeItem('variavelHandler');
                   }}
                 >
@@ -2791,32 +2634,6 @@ function FrasesTestes() {
               </Group>
             </>
           )}
-
-          <Divider label="Formato Antigo (Compatibilidade)" labelPosition="center" my="md" />
-          
-          <Text size="sm" c="dimmed">
-            Digite as opções da variável local, uma por linha. Elas serão inseridas no formato [opcao1//opcao2//opcao3].
-          </Text>
-          
-          <Textarea
-            label="Opções da Variável Local (Formato Antigo)"
-            placeholder="Digite uma opção por linha&#10;Exemplo:&#10;Opção 1&#10;Opção 2&#10;Opção 3"
-            value={opcoesVariavelLocal}
-            onChange={(event) => setOpcoesVariavelLocal(event.currentTarget.value)}
-            minRows={3}
-            autosize
-            maxRows={10}
-          />
-          
-          <Group justify="flex-end">
-            <Button 
-              color="blue"
-              onClick={handleAdicionarVariavelLocal}
-              disabled={!opcoesVariavelLocal.trim() && (!variavelLocalTipoControle || variavelLocalValores.length === 0)}
-            >
-              {variavelLocalTipoControle && variavelLocalValores.length > 0 ? 'Adicionar (Novo Formato)' : 'Adicionar (Formato Antigo)'}
-            </Button>
-          </Group>
         </Stack>
       </Modal>
     </Layout>

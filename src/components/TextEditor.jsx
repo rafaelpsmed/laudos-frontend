@@ -759,7 +759,7 @@ const TextEditor = forwardRef(({
 
   // ============================================================
   // ATALHOS DE TECLADO
-  // Nota: Shift+A para gravação agora é gerenciado pelo hook useAudioTranscription
+  // Nota: o atalho de gravação é gerenciado pelo hook useAudioTranscription
   // ============================================================
   useEffect(() => {
     const handleKeyDown = (event) => {

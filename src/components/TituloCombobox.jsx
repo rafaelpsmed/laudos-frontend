@@ -2,6 +2,14 @@ import { Combobox, Input, useCombobox } from '@mantine/core';
 import { useEffect } from 'react';
 import api from '../api';
 
+function normalizarTexto(valor) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
 function TituloCombobox({ 
   value, 
   onChange, 
@@ -11,24 +19,21 @@ function TituloCombobox({
   setTitulosDisponiveis,
   required = true 
 }) {
-  const combobox = useCombobox();
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
 
   useEffect(() => {
     const fetchTitulos = async () => {
       try {
-        // console.log('Buscando títulos com métodos:', metodosSelected);
         const response = await api.get('/api/modelo_laudo/');
-        // console.log('Resposta da API:', response.data);
         
         if (metodosSelected && metodosSelected.length > 0) {
-          // Filtra os títulos pelos métodos selecionados
           const modelosFiltrados = response.data.filter(modelo => 
             metodosSelected.includes(modelo.metodo.toString())
           );
-          // console.log('Modelos filtrados:', modelosFiltrados);
           setTitulosDisponiveis(modelosFiltrados);
         } else {
-          // Se não há método selecionado, mostra todos os modelos
           setTitulosDisponiveis(response.data);
         }
       } catch (error) {
@@ -41,11 +46,20 @@ function TituloCombobox({
   }, [metodosSelected, setTitulosDisponiveis]);
 
   const handleTituloSelect = (selectedTitulo) => {
-    // console.log('Título selecionado:', selectedTitulo);
     onChange(selectedTitulo);
     onTituloSelect(selectedTitulo);
     combobox.closeDropdown();
   };
+
+  const titulos = titulosDisponiveis || [];
+  const tituloExatoSelecionado = titulos.some((item) => item.titulo === value);
+  const termoBusca = normalizarTexto(value);
+  const titulosFiltrados =
+    tituloExatoSelecionado || !termoBusca
+      ? titulos
+      : titulos.filter((item) =>
+          normalizarTexto(item.titulo).includes(termoBusca)
+        );
 
   return (
     <Combobox
@@ -55,26 +69,35 @@ function TituloCombobox({
       <Combobox.Target>
         <Input.Wrapper label="Título do Modelo" required={required}>
           <Input
-            placeholder="Digite o título do modelo"
+            placeholder="Digite para buscar ou criar um título"
             value={value}
-            onChange={(event) => onChange(event.currentTarget.value)}
+            onChange={(event) => {
+              onChange(event.currentTarget.value);
+              combobox.openDropdown();
+              combobox.updateSelectedOptionIndex();
+            }}
             onClick={() => combobox.openDropdown()}
+            onFocus={() => combobox.openDropdown()}
             rightSection={<Combobox.Chevron />}
           />
         </Input.Wrapper>
       </Combobox.Target>
 
       <Combobox.Dropdown>
-        <Combobox.Options>
-          {titulosDisponiveis.map((item) => (
-            <Combobox.Option key={item.id} value={item.titulo}>
-              {item.titulo}
-            </Combobox.Option>
-          ))}
+        <Combobox.Options mah={250} style={{ overflowY: 'auto' }}>
+          {titulosFiltrados.length > 0 ? (
+            titulosFiltrados.map((item) => (
+              <Combobox.Option key={item.id} value={item.titulo}>
+                {item.titulo}
+              </Combobox.Option>
+            ))
+          ) : (
+            <Combobox.Empty>Nenhum modelo encontrado</Combobox.Empty>
+          )}
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
   );
 }
 
-export default TituloCombobox; 
+export default TituloCombobox;

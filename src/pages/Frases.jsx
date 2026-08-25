@@ -244,7 +244,7 @@ function Frases() {
   } = useAudioTranscription({
     textoState: fraseBase,
     setTextoState: setFraseBase,
-    atalhoTeclado: 'Shift+A',
+    atalhoTeclado: 'Ctrl+Alt+A',
     pauseDelay: 2000
   });
 
@@ -256,7 +256,7 @@ function Frases() {
   } = useAudioTranscription({
     textoState: fraseBaseSemModelo,
     setTextoState: setFraseBaseSemModelo,
-    atalhoTeclado: 'Shift+A',
+    atalhoTeclado: 'Ctrl+Alt+A',
     pauseDelay: 2000
   });
 
@@ -1890,7 +1890,7 @@ function Frases() {
                       variant={isRecordingComModelo ? "filled" : "subtle"}
                       color={isRecordingComModelo ? "red" : "blue"}
                       onClick={toggleRecordingComModelo}
-                      title="Atalho: Shift+A | Inserção rápida: Enter"
+                      title="Atalho: Ctrl+Alt+A | Inserção rápida: Enter"
                       style={{
                         position: 'absolute',
                         top: 8,
@@ -2192,7 +2192,7 @@ function Frases() {
                       variant={isRecordingSemModelo ? "filled" : "subtle"}
                       color={isRecordingSemModelo ? "red" : "blue"}
                       onClick={toggleRecordingSemModelo}
-                      title="Atalho: Shift+A | Inserção rápida: Enter"
+                      title="Atalho: Ctrl+Alt+A | Inserção rápida: Enter"
                       style={{
                         position: 'absolute',
                         top: 8,

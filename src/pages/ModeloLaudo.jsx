@@ -1,4 +1,4 @@
-import { Group, Stack, MultiSelect, Combobox, Input, Select, useCombobox, Text, Button, Modal } from '@mantine/core';
+import { Group, Stack, MultiSelect, Text, Button, Modal } from '@mantine/core';
 import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
@@ -6,6 +6,7 @@ import { jwtDecode } from "jwt-decode";
 import { ACCESS_TOKEN } from '../constants';
 import TextEditor from '../components/TextEditor';
 import VariaveisModal from '../components/VariaveisModal';
+import TituloCombobox from '../components/TituloCombobox';
 import api from '../api';
 import Layout from '../components/Layout';
 
@@ -24,7 +25,6 @@ function ModeloLaudo() {
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
   const [modalVariaveisAberto, setModalVariaveisAberto] = useState(false);
   const navigate = useNavigate();
-  const combobox = useCombobox();
   const editorRef = useRef(null);
 
   useEffect(() => {
@@ -43,55 +43,6 @@ function ModeloLaudo() {
 
     fetchMetodos();
   }, []);
-
-  // Busca inicial dos títulos
-  useEffect(() => {
-    const fetchTitulosInicial = async () => {
-      try {
-        // console.log('Buscando títulos iniciais...');
-        const response = await api.get('/api/modelo_laudo/');
-        // console.log('Resposta da API (títulos iniciais):', response.data);
-        if (response.data && Array.isArray(response.data)) {
-          setTitulosDisponiveis(response.data);
-        } else {
-          // console.error('Resposta da API não é um array:', response.data);
-        }
-      } catch (error) {
-        // console.error('Erro ao buscar títulos iniciais:', error);
-        // console.error('Detalhes do erro:', error.response?.data);
-      }
-    };
-
-    fetchTitulosInicial();
-  }, []);
-
-  // Busca títulos quando o método muda
-  useEffect(() => {
-    const fetchTitulos = async () => {
-      try {
-        // console.log('Métodos selecionados:', metodosSelected);
-        const response = await api.get('/api/modelo_laudo/');
-        // console.log('Resposta da API (todos os títulos):', response.data);
-        
-        if (metodosSelected.length > 0) {
-          // Filtra os títulos disponíveis pelos métodos selecionados
-          const modelosFiltrados = response.data.filter(modelo => 
-            metodosSelected.includes(modelo.metodo.toString())
-          );
-          // console.log('Modelos filtrados:', modelosFiltrados);
-          setTitulosDisponiveis(modelosFiltrados);
-        } else {
-          // Se não há método selecionado, mostra todos os modelos
-          setTitulosDisponiveis(response.data);
-        }
-      } catch (error) {
-        // console.error('Erro ao buscar títulos:', error);
-        // console.error('Detalhes do erro:', error.response?.data);
-      }
-    };
-
-    fetchTitulos();
-  }, [metodosSelected]);
 
   // Modifique o MultiSelect para limpar o título quando mudar a seleção
   const handleMetodosChange = (newValue) => {
@@ -399,43 +350,14 @@ function ModeloLaudo() {
           clearable
         />
 
-        <Combobox
-          store={combobox}
-          onOptionSubmit={async (val) => {
-            setTitulo(val);
-            await fetchModeloCompleto(val);
-            combobox.closeDropdown();
-          }}
-        >
-          <Combobox.Target>
-            <Input.Wrapper label="Título do Modelo" required>
-              <Input
-                placeholder="Digite o título do modelo"
-                value={titulo}              
-                onChange={(event) => {
-                  setTitulo(event.currentTarget.value);
-                  // Não limpa o modeloId aqui - permite editar o título de um modelo existente
-                  // O modeloId só é limpo quando:
-                  // 1. Um novo método é selecionado (handleMetodosChange)
-                  // 2. Um novo modelo é selecionado do combobox (fetchModeloCompleto)
-                  // 3. Os campos são limpos manualmente (handleClear)
-                }}
-                onClick={() => combobox.openDropdown()}
-                rightSection={<Combobox.Chevron />}
-              />
-            </Input.Wrapper>
-          </Combobox.Target>
-
-          <Combobox.Dropdown>
-            <Combobox.Options>
-              {titulosDisponiveis.map((item) => (
-                <Combobox.Option key={item.id} value={item.titulo}>
-                  {item.titulo}
-                </Combobox.Option>
-              ))}
-            </Combobox.Options>
-          </Combobox.Dropdown>
-        </Combobox>
+        <TituloCombobox
+          value={titulo}
+          onChange={setTitulo}
+          metodosSelected={metodosSelected}
+          onTituloSelect={fetchModeloCompleto}
+          titulosDisponiveis={titulosDisponiveis}
+          setTitulosDisponiveis={setTitulosDisponiveis}
+        />
 
         <Text fw={500} size="sm" required>Modelo de Laudo</Text>
         <Stack spacing="md">
