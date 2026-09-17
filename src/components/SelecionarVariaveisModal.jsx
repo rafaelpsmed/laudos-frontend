@@ -1,10 +1,17 @@
 import { Modal, Stack, Text, Checkbox, Group, Button, TextInput, Radio, Select, MultiSelect, Divider, Tooltip } from '@mantine/core';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { IconInfoCircle } from '@tabler/icons-react';
 import api from '../api';
 import ComboboxAutocomplete from './componentesVariaveisModal/ComboboxAutocomplete';
+import {
+  formatarSomaNumeros,
+  opcoesComPontos,
+  rotuloClassificacao,
+  somarNumerosOpcoesSelecionadas,
+  textoNumeroOpcao,
+} from '../utils/numeroOpcaoVariavel';
 
-function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, elementosOrdenados, onConfirm, tituloFrase, temMedida, textoPuro }) {
+function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, elementosOrdenados, onConfirm, tituloFrase, temMedida, textoPuro, faixasClassificacao = [] }) {
   const [valoresSelecionados, setValoresSelecionados] = useState({});
   const [variaveisDetalhes, setVariaveisDetalhes] = useState([]);
   // Uma medida por ocorrência de '$' no texto
@@ -395,10 +402,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     const tipo = variavel.variavel.tipo;
     const labelDisplay = getLabelDisplay(variavel);
 
-    const valores = variavel.variavel.valores.map(v => ({
-      value: v.valor,
-      label: v.descricao
-    }));
+    const valores = opcoesComPontos(variavel.variavel.valores);
 
     const value = valoresSelecionados[instanciaId] || '';
     const labelElement = renderLabelInstancia(labelDisplay, instanciaNumero, totalInstancias, posicaoNoTexto, tituloBase);
@@ -611,13 +615,43 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
       }
     });
 
-    // let tamanhoTextoResultado = resultado.length;
-    // console.log("Frase final: " + resultado.toString() + ", tamanho: " + tamanhoTextoResultado);
-    onConfirm(resultado);
+    const somaOpcoes = somarNumerosOpcoesSelecionadas({
+      valoresSelecionados,
+      variaveisDetalhes,
+      elementosOrdenados,
+    });
+    const soma = somaOpcoes?.soma ?? 0;
+    onConfirm(resultado, {
+      soma,
+      classificacao: rotuloClassificacao(soma, faixasClassificacao),
+      temSoma: Boolean(somaOpcoes),
+    });
     onClose();
   };
 
   handleConfirmRef.current = handleConfirm;
+
+  const somaAoVivo = useMemo(
+    () =>
+      somarNumerosOpcoesSelecionadas({
+        valoresSelecionados,
+        variaveisDetalhes,
+        elementosOrdenados,
+      }),
+    [valoresSelecionados, variaveisDetalhes, elementosOrdenados],
+  );
+
+  const classificacaoAoVivo = rotuloClassificacao(somaAoVivo?.soma ?? 0, faixasClassificacao);
+
+  const temPontuacao = useMemo(() => {
+    const listas = [
+      ...(variaveisDetalhes || []).map((v) => v.variavel?.valores),
+      ...(elementosOrdenados || [])
+        .filter((el) => el.tipo === 'variavelLocal')
+        .map((el) => el.dados?.variavel?.valores),
+    ];
+    return listas.some((lista) => (lista || []).some((opcao) => textoNumeroOpcao(opcao)));
+  }, [variaveisDetalhes, elementosOrdenados]);
 
   // Função para atualizar valor quando usuário seleciona (sem aplicar ainda)
   const handleSelecaoReferencia = (valor) => {
@@ -753,8 +787,17 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
       });
     }
     
-    // Fecha modal principal e envia resultado
-    onConfirm(resultado);
+    const somaOpcoesRef = somarNumerosOpcoesSelecionadas({
+      valoresSelecionados: novosValores,
+      variaveisDetalhes,
+      elementosOrdenados,
+    });
+    const somaRef = somaOpcoesRef?.soma ?? 0;
+    onConfirm(resultado, {
+      soma: somaRef,
+      classificacao: rotuloClassificacao(somaRef, faixasClassificacao),
+      temSoma: Boolean(somaOpcoesRef),
+    });
     onClose();
   };
 
@@ -763,10 +806,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     const tipo = variavel.variavel.tipo;
     const labelDisplay = getLabelDisplay(variavel);
     
-    const valores = variavel.variavel.valores.map(v => ({
-      value: v.valor,
-      label: v.descricao
-    }));
+    const valores = opcoesComPontos(variavel.variavel.valores);
 
     if (tipo === "Combobox") {
       return (
@@ -844,10 +884,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     const labelDisplay = variavelLocal.variavel.label || variavelLocal.tituloVariavel || 'Variável Local';
     
     // Renderiza valores originais (sem expansão)
-    const valores = variavelLocal.variavel.valores.map(v => ({
-      value: v.valor,
-      label: v.descricao
-    }));
+    const valores = opcoesComPontos(variavelLocal.variavel.valores);
 
     const textoOriginal = variavelLocal.textoOriginal;
 
@@ -957,10 +994,7 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
     const labelDisplay = getLabelDisplay(variavel);
     
     // Renderiza valores originais (sem expansão)
-    const valores = variavel.variavel.valores.map(v => ({
-      value: v.valor,
-      label: v.descricao
-    }));
+    const valores = opcoesComPontos(variavel.variavel.valores);
 
     if (tipo === "Combobox") {
       return (
@@ -1132,6 +1166,13 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
             return null;
           });
         })()}
+
+        {(temPontuacao || (faixasClassificacao || []).length > 0) && (
+          <Text size="sm" fw={600}>
+            Soma: {formatarSomaNumeros(somaAoVivo?.soma ?? 0)}
+            {classificacaoAoVivo ? ` · ${classificacaoAoVivo}` : ''}
+          </Text>
+        )}
 
         <Group position="right" mt="md">
           <Button onClick={handleConfirm}>Confirmar (F8)</Button>

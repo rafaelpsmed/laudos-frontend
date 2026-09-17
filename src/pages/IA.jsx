@@ -31,6 +31,7 @@ import {
     splitPartesResolvidas,
     textoTemVariaveisParaModal,
 } from '../utils/variaveisFrase';
+import { resolverTextoClassificacao } from '../utils/numeroOpcaoVariavel';
 
 function IA() {
     const [isGeneratingAnalise, setIsGeneratingAnalise] = useState(false);
@@ -483,7 +484,7 @@ function IA() {
         return true;
     };
 
-    const handleVariaveisSelecionadasIA = async (valoresSelecionados) => {
+    const handleVariaveisSelecionadasIA = async (valoresSelecionados, metaClassificacao = {}) => {
         const editor = editorAnaliseRef.current?.editor;
         if (!editor || !frasePendenteVariaveis) {
             setModalVariaveisAberto(false);
@@ -496,6 +497,11 @@ function IA() {
         }
 
         let textoFinal = aplicarValoresSelecionadosAoTexto(textoTemporario, valores);
+        textoFinal = resolverTextoClassificacao(
+            textoFinal,
+            metaClassificacao.soma ?? 0,
+            frasePendenteVariaveis?.frase?.frase?.faixasClassificacao,
+        );
         const splitResult = splitPartesResolvidas(
             textoFinal,
             frasePendenteVariaveis.segmentacao || null
@@ -1164,6 +1170,9 @@ function IA() {
                     || textoTemporario?.includes('$')
                 }
                 textoPuro={textoPuroParaModal}
+                faixasClassificacao={
+                    frasePendenteVariaveis?.frase?.frase?.faixasClassificacao || []
+                }
             />
         </Layout>
     );

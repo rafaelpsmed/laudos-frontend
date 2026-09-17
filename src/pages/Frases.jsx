@@ -49,6 +49,7 @@ function Frases() {
   const [variavelLocalLabel, setVariavelLocalLabel] = useState('');
   const [variavelLocalDescricao, setVariavelLocalDescricao] = useState('');
   const [variavelLocalValor, setVariavelLocalValor] = useState('');
+  const [variavelLocalValorEditadoManualmente, setVariavelLocalValorEditadoManualmente] = useState(false);
   const [variavelLocalValores, setVariavelLocalValores] = useState([]);
   const [variavelLocalDelimitador, setVariavelLocalDelimitador] = useState('');
   const [variavelLocalUltimoDelimitador, setVariavelLocalUltimoDelimitador] = useState('');
@@ -1427,7 +1428,7 @@ function Frases() {
 
   // Funções para gerenciar variável local completa (novo formato)
   const handleAdicionarValorLocal = () => {
-    if (!variavelLocalDescricao.trim() || !variavelLocalValor.trim()) return;
+    if (!variavelLocalDescricao.trim()) return;
 
     const novoValor = {
       descricao: variavelLocalDescricao,
@@ -1439,12 +1440,14 @@ function Frases() {
     // Limpa os campos após adicionar
     setVariavelLocalDescricao('');
     setVariavelLocalValor('');
+    setVariavelLocalValorEditadoManualmente(false);
   };
 
   const handleEditarValorLocal = (index) => {
     const valor = variavelLocalValores[index];
     setVariavelLocalDescricao(valor.descricao);
     setVariavelLocalValor(valor.valor);
+    setVariavelLocalValorEditadoManualmente(true);
     
     // Remove o valor atual
     setVariavelLocalValores(variavelLocalValores.filter((_, i) => i !== index));
@@ -1462,6 +1465,7 @@ function Frases() {
     setVariavelLocalLabel('');
     setVariavelLocalDescricao('');
     setVariavelLocalValor('');
+    setVariavelLocalValorEditadoManualmente(false);
     setVariavelLocalValores([]);
     setVariavelLocalDelimitador('');
     setVariavelLocalUltimoDelimitador('');
@@ -2492,14 +2496,19 @@ function Frases() {
                   onChange={(event) => {
                     const novoValor = event.currentTarget.value;
                     setVariavelLocalDescricao(novoValor);
-                    setVariavelLocalValor(novoValor);
+                    if (!variavelLocalValorEditadoManualmente) {
+                      setVariavelLocalValor(novoValor);
+                    }
                   }}
                 />
                 <TextInput
                   label="Valor"
-                  placeholder="Digite o valor"
+                  placeholder="Digite o valor (pode ficar em branco)"
                   value={variavelLocalValor}
-                  onChange={(event) => setVariavelLocalValor(event.currentTarget.value)}
+                  onChange={(event) => {
+                    setVariavelLocalValor(event.currentTarget.value);
+                    setVariavelLocalValorEditadoManualmente(true);
+                  }}
                 />
               </Group>
 
@@ -2508,7 +2517,7 @@ function Frases() {
                   color="blue" 
                   onClick={handleAdicionarValorLocal}
                   leftSection={<IconDeviceFloppy size={20} />}
-                  disabled={!variavelLocalDescricao.trim() || !variavelLocalValor.trim()}
+                  disabled={!variavelLocalDescricao.trim()}
                 >
                   Adicionar Valores
                 </Button>

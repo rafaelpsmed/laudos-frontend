@@ -28,6 +28,16 @@ import {
   unpackPartesNaFrase,
   capitalizarInicioDaFrase,
 } from '../utils/variaveisFrase';
+import {
+  criarMetaNumeracao,
+  materializarTokensAutoNum,
+  renumerarAutoNumeros,
+} from '../utils/autoNumeracaoFrase';
+import { resolverTextoClassificacao } from '../utils/numeroOpcaoVariavel';
+
+function aplicarClassificacaoNaFrase(texto, fraseObj, soma = 0) {
+  return resolverTextoClassificacao(texto, soma, fraseObj?.frase?.faixasClassificacao);
+}
 
 function escapeHtmlForInlineText(text) {
   return text
@@ -485,6 +495,7 @@ function Laudos() {
   const processarFrase = async (frase, tipoInsercao = null, elementoLinha = null, posicaoCursor = null) => {
     let novoTexto = texto;
     const editor = editorRef.current?.editor;
+    const metaNum = criarMetaNumeracao(frase);
     // Posição onde queremos deixar o cursor ao final do processo (fim do trecho inserido/substituído)
     let cursorDesejado = null;
     const temConclusao = !!frase?.frase?.conclusao;
@@ -499,6 +510,7 @@ function Laudos() {
       try {
         // Aplica a formatação à frase base
         fraseBase = aplicarFormatacao(fraseBase);
+        fraseBase = materializarTokensAutoNum(fraseBase, metaNum);
 
         // Variáveis em toda a frase (base, substituições outras, conclusão) num único passo
         const {
@@ -539,6 +551,7 @@ function Laudos() {
         }
 
         // Se não tem variáveis, insere normalmente (fluxo antigo)
+        fraseBase = aplicarClassificacaoNaFrase(fraseBase, frase);
         let posicaoInicialInsercao = null;
         let deltaInserido = null;
 
@@ -625,7 +638,13 @@ function Laudos() {
         if (frase.frase.substituicoesOutras && frase.frase.substituicoesOutras.length > 0) {
           let conteudoAtual = editor.getHTML();
           frase.frase.substituicoesOutras.forEach(substituicao => {
-            const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
+            const substituirPor = materializarTokensAutoNum(
+              aplicarClassificacaoNaFrase(
+                aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor)),
+                frase,
+              ),
+              metaNum,
+            );
             conteudoAtual = substituirPrimeiraOcorrenciaOutras(
               conteudoAtual,
               substituicao.procurarPor,
@@ -700,7 +719,13 @@ function Laudos() {
 
           // Processa a substituição principal da frase base
           if (frase.frase.substituicaoFraseBase && frase.frase.fraseBase) {
-            const fraseBaseFormatada = aplicarFormatacao(converterQuebrasDeLinha(frase.frase.fraseBase));
+            const fraseBaseFormatada = materializarTokensAutoNum(
+              aplicarClassificacaoNaFrase(
+                aplicarFormatacao(converterQuebrasDeLinha(frase.frase.fraseBase)),
+                frase,
+              ),
+              metaNum,
+            );
             novoConteudo = conteudoAtual.replace(
               frase.frase.substituicaoFraseBase,
               fraseBaseFormatada
@@ -710,7 +735,13 @@ function Laudos() {
           // Processa as outras substituições
           if (frase.frase.substituicoesOutras && frase.frase.substituicoesOutras.length > 0) {
             frase.frase.substituicoesOutras.forEach(substituicao => {
-              const substituirPor = aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor));
+              const substituirPor = materializarTokensAutoNum(
+                aplicarClassificacaoNaFrase(
+                  aplicarFormatacao(converterQuebrasDeLinha(substituicao.substituirPor)),
+                  frase,
+                ),
+                metaNum,
+              );
               novoConteudo = substituirPrimeiraOcorrenciaOutras(
                 novoConteudo,
                 substituicao.procurarPor,
@@ -735,7 +766,10 @@ function Laudos() {
       if (editor) {
         try {
           // Aplica a formatação à conclusão
-          const conclusaoFormatada = aplicarFormatacao(frase.frase.conclusao);
+          const conclusaoFormatada = materializarTokensAutoNum(
+            aplicarClassificacaoNaFrase(aplicarFormatacao(frase.frase.conclusao), frase),
+            metaNum,
+          );
           
           // Se existe uma conclusão do modelo, substitui ela
           if (conclusaoDoModelo) {
@@ -801,6 +835,9 @@ function Laudos() {
     // Atualiza o texto no estado (para frases sem variáveis ou fluxo antigo)
     if (!frasePendenteComVariaveis) {
       setTexto(novoTexto);
+    }
+    if (editor) {
+      renumerarAutoNumeros(editor);
     }
   };
 
@@ -897,8 +934,15 @@ function Laudos() {
   };
 
 
-    const handleVariaveisSelecionadas = (valoresSelecionados) => {
+    const handleVariaveisSelecionadas = (valoresSelecionados, metaClassificacao = {}) => {
     let textoFinal = aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSelecionados);
+    const fraseDaVez =
+      (frasePendenteComVariaveisRef.current || frasePendenteComVariaveis)?.frase || fraseTemporaria;
+    textoFinal = aplicarClassificacaoNaFrase(
+      textoFinal,
+      fraseDaVez,
+      metaClassificacao.soma ?? 0,
+    );
 
     const pendenteVar =
       frasePendenteComVariaveisRef.current || frasePendenteComVariaveis;
@@ -922,6 +966,7 @@ function Laudos() {
         frasePendenteComVariaveisRef.current || frasePendenteComVariaveis;
       const editor = editorRef.current?.editor;
       const fraseAtual = pendente?.frase;
+      const metaNum = criarMetaNumeracao(fraseAtual);
 
       if (pendente?.modoSubstituicao && editor && fraseAtual?.frase) {
         const cursorDesejado = editor.state.selection.from;
@@ -935,7 +980,12 @@ function Laudos() {
               conclusaoResolvida: null,
               temConc: !!fraseAtual.frase.conclusao,
             };
-        const { base: textoBaseSubst, subs: subsRes, conclusaoResolvida } = segResolvido;
+        let { base: textoBaseSubst, subs: subsRes, conclusaoResolvida } = segResolvido;
+        textoBaseSubst = materializarTokensAutoNum(textoBaseSubst, metaNum);
+        if (Array.isArray(subsRes)) {
+          subsRes = subsRes.map((item) => materializarTokensAutoNum(item, metaNum));
+        }
+        conclusaoResolvida = materializarTokensAutoNum(conclusaoResolvida, metaNum);
 
         let conteudoAtual = editor.getHTML();
         let novoConteudo = conteudoAtual;
@@ -952,12 +1002,14 @@ function Laudos() {
           fraseAtual.frase.substituicoesOutras.length > 0
         ) {
           fraseAtual.frase.substituicoesOutras.forEach((substituicao, idx) => {
-            const substituirPor =
+            const substituirPor = materializarTokensAutoNum(
               subsRes && subsRes[idx] !== undefined
                 ? subsRes[idx]
                 : aplicarFormatacao(
                     converterQuebrasDeLinha(substituicao.substituirPor)
-                  );
+                  ),
+              metaNum,
+            );
             novoConteudo = substituirPrimeiraOcorrenciaOutras(
               novoConteudo,
               substituicao.procurarPor,
@@ -974,12 +1026,14 @@ function Laudos() {
 
         if (fraseAtual.frase.conclusao) {
           try {
-            const conclusaoFormatada =
+            const conclusaoFormatada = materializarTokensAutoNum(
               partesResolvidas != null &&
               conclusaoResolvida != null &&
               conclusaoResolvida !== ''
                 ? conclusaoResolvida
-                : aplicarFormatacao(fraseAtual.frase.conclusao);
+                : aplicarFormatacao(fraseAtual.frase.conclusao),
+              metaNum,
+            );
 
             if (conclusaoDoModelo) {
               const htmlAtual = editor.getHTML();
@@ -1030,6 +1084,7 @@ function Laudos() {
         }
 
         setTexto(novoTexto);
+        renumerarAutoNumeros(editor);
       } else {
         const posicaoInsercao =
           typeof posicaoInsercaoFraseRef.current === 'number'
@@ -1045,7 +1100,12 @@ function Laudos() {
                 conclusaoResolvida: null,
                 temConc: !!fraseAtual?.frase?.conclusao,
               };
-          const { base: blocoBase, subs: subsRes, conclusaoResolvida } = segResolvido;
+          let { base: blocoBase, subs: subsRes, conclusaoResolvida } = segResolvido;
+          blocoBase = materializarTokensAutoNum(blocoBase, metaNum);
+          if (Array.isArray(subsRes)) {
+            subsRes = subsRes.map((item) => materializarTokensAutoNum(item, metaNum));
+          }
+          conclusaoResolvida = materializarTokensAutoNum(conclusaoResolvida, metaNum);
 
           editor.commands.setTextSelection(posicaoInsercao);
           editor.commands.insertContent(blocoBase);
@@ -1056,12 +1116,14 @@ function Laudos() {
           ) {
             let htmlAtual = editor.getHTML();
             fraseAtual.frase.substituicoesOutras.forEach((substituicao, idx) => {
-              const substituirPor =
+              const substituirPor = materializarTokensAutoNum(
                 subsRes && subsRes[idx] !== undefined
                   ? subsRes[idx]
                   : aplicarFormatacao(
                       converterQuebrasDeLinha(substituicao.substituirPor)
-                    );
+                    ),
+                metaNum,
+              );
               htmlAtual = substituirPrimeiraOcorrenciaOutras(
                 htmlAtual,
                 substituicao.procurarPor,
@@ -1076,12 +1138,14 @@ function Laudos() {
 
           if (fraseAtual?.frase?.conclusao) {
             try {
-              const conclusaoFormatada =
+              const conclusaoFormatada = materializarTokensAutoNum(
                 partesResolvidas != null &&
                 conclusaoResolvida != null &&
                 conclusaoResolvida !== ''
                   ? conclusaoResolvida
-                  : aplicarFormatacao(fraseAtual.frase.conclusao);
+                  : aplicarFormatacao(fraseAtual.frase.conclusao),
+                metaNum,
+              );
 
               if (conclusaoDoModelo) {
                 const htmlAtual = editor.getHTML();
@@ -1132,6 +1196,7 @@ function Laudos() {
           }
 
           setTexto(novoTextoIns);
+          renumerarAutoNumeros(editor);
         }
       }
 
@@ -1811,6 +1876,12 @@ function Laudos() {
         tituloFrase={tituloFraseAtual}
         temMedida={fraseTemporaria?.frase?.fraseBase?.includes('$') || textoTemporario?.includes('$')}
         textoPuro={textoPuroParaModal}
+        faixasClassificacao={
+          (frasePendenteComVariaveisRef.current || frasePendenteComVariaveis)?.frase?.frase
+            ?.faixasClassificacao
+          || fraseTemporaria?.frase?.faixasClassificacao
+          || []
+        }
       />
 
       <InserirFraseModal

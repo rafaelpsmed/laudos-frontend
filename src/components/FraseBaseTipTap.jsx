@@ -5,7 +5,7 @@ import {
   ReactNodeViewRenderer,
 } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, InputRule } from '@tiptap/core';
 import {
   forwardRef,
   useCallback,
@@ -16,10 +16,14 @@ import {
 } from 'react';
 import { Box } from '@mantine/core';
 import { createVariableRefSuggestionExtension } from './variableRefSuggestion';
+import { normalizarPrefixoAutoNum } from '../utils/autoNumeracaoFrase';
+import { normalizarNomeScore } from '../utils/numeroOpcaoVariavel';
 
 const LOCAL_TOKEN_RE = /^\[LOCAL: [^\]]+\]$/;
 const REF_LOCAL_TOKEN_RE = /^\[REF: [^\]]+\]$/;
-const VAR_TOKEN_RE = /(\[REF: [^\]]+\]|\[LOCAL: [^\]]+\]|\{@[^{}]+\}|\{[^{}]+\})/g;
+const AUTO_NUM_TOKEN_RE = /^\{#([A-Za-zÀ-ÿ]{1,12})\}$/;
+const SCORE_TOKEN_RE = /^\{(soma|classifica[cç][aã]o)\}$/i;
+const VAR_TOKEN_RE = /(\[REF: [^\]]+\]|\[LOCAL: [^\]]+\]|\{@[^{}]+\}|\{#[A-Za-zÀ-ÿ]{1,12}\}|\{soma\}|\{classifica[cç][aã]o\}|\{[^{}]+\})/gi;
 
 function extractLocalLabel(fullToken) {
   return fullToken.slice(8, -1).trim();
@@ -60,6 +64,18 @@ function tokenizeLine(line, payloadByDisplayRef) {
       content.push({
         type: 'phraseVariable',
         attrs: { variant: 'ref', refKind: 'global', titulo, label: titulo },
+      });
+    } else if (AUTO_NUM_TOKEN_RE.test(token)) {
+      const prefix = normalizarPrefixoAutoNum(token.slice(2, -1));
+      content.push({
+        type: 'phraseVariable',
+        attrs: { variant: 'autonum', prefix, titulo: prefix, label: prefix },
+      });
+    } else if (SCORE_TOKEN_RE.test(token)) {
+      const titulo = normalizarNomeScore(token.slice(1, -1)) || 'soma';
+      content.push({
+        type: 'phraseVariable',
+        attrs: { variant: 'score', titulo, label: titulo },
       });
     } else if (token.startsWith('{') && token.endsWith('}')) {
       const titulo = token.slice(1, -1);
@@ -115,6 +131,11 @@ export function serializeTipTapToDisplay(doc, payloadByDisplayRef) {
           } else {
             parts.push(`{@${node.attrs.titulo || node.attrs.label}}`);
           }
+        } else if (v === 'autonum') {
+          parts.push(`{#${normalizarPrefixoAutoNum(node.attrs.prefix || node.attrs.titulo)}}`);
+        } else if (v === 'score') {
+          const token = normalizarNomeScore(node.attrs.titulo || node.attrs.label) || 'soma';
+          parts.push(`{${token}}`);
         } else if (v === 'global') {
           parts.push(`{${node.attrs.titulo}}`);
         } else if (map) {
@@ -133,14 +154,22 @@ function createPhraseVariableExtension(activateRef) {
     const { node } = props;
     const variant = node.attrs.variant;
     const isRef = variant === 'ref';
+    const isAutonum = variant === 'autonum';
+    const isScore = variant === 'score';
     const label = variant === 'local' || (isRef && node.attrs.refKind === 'local')
       ? node.attrs.label
-      : node.attrs.titulo;
-    const displayLabel = isRef ? `@${label}` : label;
+      : (isAutonum ? normalizarPrefixoAutoNum(node.attrs.prefix || node.attrs.titulo) : node.attrs.titulo);
+    const displayLabel = isAutonum
+      ? `{#${label}}`
+      : isScore
+        ? `{${String(label || '').toLowerCase()}}`
+        : isRef
+          ? `@${label}`
+          : label;
     const isLocal = variant === 'local';
 
     const fire = () => {
-      if (isRef) return;
+      if (isRef || isAutonum || isScore) return;
       activateRef.current?.({
         variant,
         label: node.attrs.label,
@@ -183,23 +212,39 @@ function createPhraseVariableExtension(activateRef) {
             padding: '2px 8px',
             borderRadius: '4px',
             border: '1px solid',
-            borderColor: isRef
-              ? 'var(--mantine-color-teal-8)'
-              : isLocal
-                ? 'var(--mantine-color-yellow-8)'
-                : 'var(--mantine-color-blue-7)',
-            backgroundColor: isRef
-              ? 'var(--mantine-color-teal-1)'
-              : isLocal
-                ? 'var(--mantine-color-yellow-1)'
-                : 'var(--mantine-color-blue-0)',
+            borderColor: isScore
+              ? 'var(--mantine-color-orange-7)'
+              : isAutonum
+                ? 'var(--mantine-color-violet-7)'
+                : isRef
+                  ? 'var(--mantine-color-teal-8)'
+                  : isLocal
+                    ? 'var(--mantine-color-yellow-8)'
+                    : 'var(--mantine-color-blue-7)',
+            backgroundColor: isScore
+              ? 'var(--mantine-color-orange-1)'
+              : isAutonum
+                ? 'var(--mantine-color-violet-1)'
+                : isRef
+                  ? 'var(--mantine-color-teal-1)'
+                  : isLocal
+                    ? 'var(--mantine-color-yellow-1)'
+                    : 'var(--mantine-color-blue-0)',
             color: 'var(--mantine-color-dark-7)',
             fontSize: '0.92em',
             fontWeight: 500,
-            cursor: isRef ? 'default' : 'pointer',
+            cursor: isRef || isAutonum || isScore ? 'default' : 'pointer',
             userSelect: 'none',
           }}
-          title={isRef ? `Referência de ${label}` : undefined}
+          title={
+            isScore
+              ? (String(label).toLowerCase() === 'soma' ? 'Soma dos pontos das opções' : 'Classificação pela faixa da soma')
+              : isAutonum
+                ? `Numeração automática ${label}1, ${label}2…`
+                : isRef
+                  ? `Referência de ${label}`
+                  : undefined
+          }
         >
           {displayLabel}
         </span>
@@ -222,7 +267,48 @@ function createPhraseVariableExtension(activateRef) {
         titulo: { default: '' },
         label: { default: '' },
         payload: { default: '' },
+        prefix: { default: '' },
       };
+    },
+
+    addInputRules() {
+      return [
+        new InputRule({
+          find: /\{#([A-Za-zÀ-ÿ]{1,12})\}$/,
+          handler: ({ chain, range, match }) => {
+            const prefix = normalizarPrefixoAutoNum(match[1]);
+            chain()
+              .deleteRange(range)
+              .insertContent({
+                type: this.name,
+                attrs: {
+                  variant: 'autonum',
+                  prefix,
+                  titulo: prefix,
+                  label: prefix,
+                },
+              })
+              .run();
+          },
+        }),
+        new InputRule({
+          find: /\{(soma|classifica[cç][aã]o)\}$/i,
+          handler: ({ chain, range, match }) => {
+            const titulo = normalizarNomeScore(match[1]) || 'soma';
+            chain()
+              .deleteRange(range)
+              .insertContent({
+                type: this.name,
+                attrs: {
+                  variant: 'score',
+                  titulo,
+                  label: titulo,
+                },
+              })
+              .run();
+          },
+        }),
+      ];
     },
 
     parseHTML() {
@@ -239,6 +325,11 @@ function createPhraseVariableExtension(activateRef) {
         text = node.attrs.refKind === 'local' ? `[REF: ${label}]` : `{@${label}}`;
       } else if (v === 'local') {
         text = `[LOCAL: ${label}]`;
+      } else if (v === 'autonum') {
+        text = `{#${normalizarPrefixoAutoNum(node.attrs.prefix || label)}}`;
+      } else if (v === 'score') {
+        const token = normalizarNomeScore(node.attrs.titulo || label) || 'soma';
+        text = `{${token}}`;
       }
       return [
         'span',
@@ -381,6 +472,18 @@ const FraseBaseTipTap = forwardRef(function FraseBaseTipTap(
           .insertContent({
             type: 'phraseVariable',
             attrs: { variant: 'local', label, payload },
+          })
+          .run();
+      },
+      insertScoreToken: (kind) => {
+        if (!editor || editor.isDestroyed) return;
+        const titulo = normalizarNomeScore(kind) || 'soma';
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: 'phraseVariable',
+            attrs: { variant: 'score', titulo, label: titulo },
           })
           .run();
       },

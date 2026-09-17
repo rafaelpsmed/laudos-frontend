@@ -5,6 +5,7 @@ import VariaveisCombobox from '../components/VariaveisCombobox';
 import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp, IconArrowRight, IconGripVertical, IconVariable } from '@tabler/icons-react';
 import api from '../api';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { montarOpcaoVariavel, textoNumeroOpcao } from '../utils/numeroOpcaoVariavel';
 
 function Variaveis() {
   const [variavelSelecionada, setVariavelSelecionada] = useState(null);
@@ -13,6 +14,8 @@ function Variaveis() {
   const [label, setLabel] = useState('');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
+  const [numero, setNumero] = useState('');
+  const [valorEditadoManualmente, setValorEditadoManualmente] = useState(false);
   const [valores, setValores] = useState([]);
   const [saving, setSaving] = useState(false);
   const [variavelId, setVariavelId] = useState(null);
@@ -44,24 +47,25 @@ function Variaveis() {
   };
 
   const handleAdicionar = () => {
-    if (!descricao.trim() || !valor.trim()) return;
+    if (!descricao.trim()) return;
 
-    const novoValor = {
-      descricao: descricao,
-      valor: valor
-    };
+    const novoValor = montarOpcaoVariavel(descricao, valor, numero);
 
     setValores([...valores, novoValor]);
     
     // Limpa os campos após adicionar
     setDescricao('');
     setValor('');
+    setNumero('');
+    setValorEditadoManualmente(false);
   };
 
   const handleEditarValor = (index) => {
     const valor = valores[index];
     setDescricao(valor.descricao);
     setValor(valor.valor);
+    setNumero(textoNumeroOpcao(valor));
+    setValorEditadoManualmente(true);
     
     // Remove o valor atual
     setValores(valores.filter((_, i) => i !== index));
@@ -185,6 +189,8 @@ function Variaveis() {
     setLabel('');
     setDescricao('');
     setValor('');
+    setNumero('');
+    setValorEditadoManualmente(false);
     setValores([]);
     setTipoControle('');
     setVariavelId(null);
@@ -304,14 +310,25 @@ function Variaveis() {
                 onChange={(event) => {
                   const novoValor = event.currentTarget.value;
                   setDescricao(novoValor);
-                  setValor(novoValor);
+                  if (!valorEditadoManualmente) {
+                    setValor(novoValor);
+                  }
                 }}
               />
               <TextInput
                 label="Valor"
-                placeholder="Digite o valor"
+                placeholder="Digite o valor (pode ficar em branco)"
                 value={valor}
-                onChange={(event) => setValor(event.currentTarget.value)}
+                onChange={(event) => {
+                  setValor(event.currentTarget.value);
+                  setValorEditadoManualmente(true);
+                }}
+              />
+              <TextInput
+                label="Número"
+                placeholder="Opcional"
+                value={numero}
+                onChange={(event) => setNumero(event.currentTarget.value)}
               />
             </Group>
 
@@ -320,7 +337,7 @@ function Variaveis() {
                 color="blue" 
                 onClick={handleAdicionar}
                 leftSection={<IconDeviceFloppy size={20} />}
-                disabled={!descricao.trim() || !valor.trim()}
+                disabled={!descricao.trim()}
               >
                 Adicionar Valores
               </Button>
@@ -424,6 +441,11 @@ function Variaveis() {
                                   <Text size="sm">
                                     <strong>Valor:</strong> {valor.valor}
                                   </Text>
+                                  {textoNumeroOpcao(valor) ? (
+                                    <Text size="sm">
+                                      <strong>Número:</strong> {textoNumeroOpcao(valor)}
+                                    </Text>
+                                  ) : null}
                                 </Stack>
                                 <Group gap="xs">
                                   <Button

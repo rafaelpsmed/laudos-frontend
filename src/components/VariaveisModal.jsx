@@ -4,6 +4,7 @@ import VariaveisCombobox from './VariaveisCombobox';
 import { IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconHelp, IconSearch } from '@tabler/icons-react';
 import api from '../api';
 import { notifications } from '@mantine/notifications';
+import { montarOpcaoVariavel, textoNumeroOpcao } from '../utils/numeroOpcaoVariavel';
 
 /**
  * @param {object} props
@@ -21,6 +22,7 @@ function VariaveisModal({
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
+  const [numero, setNumero] = useState('');
   const [valores, setValores] = useState([]);
   const [saving, setSaving] = useState(false);
   const [variavelId, setVariavelId] = useState(null);
@@ -68,15 +70,8 @@ function VariaveisModal({
 
   // Handler para o campo "Valor" que permite edição manual
   const handleValorChange = (event) => {
-    const novoValor = event.currentTarget.value;
-    setValor(novoValor);
-    
-    // Se o campo valor foi limpo, permite sincronização novamente
-    if (novoValor === '') {
-      setValorEditadoManualmente(false);
-    } else {
-      setValorEditadoManualmente(true);
-    }
+    setValor(event.currentTarget.value);
+    setValorEditadoManualmente(true);
   };
 
   const preencherFormularioVariavel = (variavel) => {
@@ -89,6 +84,7 @@ function VariaveisModal({
     setUltimoDelimitador(variavel.variavel.ultimoDelimitador || '');
     setDescricao('');
     setValor('');
+    setNumero('');
     setValorEditadoManualmente(false);
   };
 
@@ -150,24 +146,25 @@ function VariaveisModal({
   };
 
   const handleAdicionar = () => {
-    if (!descricao.trim() || !valor.trim()) return;
+    if (!descricao.trim()) return;
 
-    const novoValor = {
-      descricao: descricao,
-      valor: valor
-    };
+    const novoValor = montarOpcaoVariavel(descricao, valor, numero);
 
     setValores([...valores, novoValor]);
     
     // Limpa os campos após adicionar
     setDescricao('');
     setValor('');
+    setNumero('');
+    setValorEditadoManualmente(false);
   };
 
   const handleEditarValor = (index) => {
     const valor = valores[index];
     setDescricao(valor.descricao);
     setValor(valor.valor);
+    setNumero(textoNumeroOpcao(valor));
+    setValorEditadoManualmente(true);
     
     // Remove o valor atual
     setValores(valores.filter((_, i) => i !== index));
@@ -250,6 +247,7 @@ function VariaveisModal({
     setTitulo('');
     setDescricao('');
     setValor('');
+    setNumero('');
     setValores([]);
     setTipoControle('');
     setVariavelId(null);
@@ -347,7 +345,7 @@ function VariaveisModal({
                   <Text size="sm" mt="xs"><strong>Valores:</strong></Text>
                   {valores.map((valor, index) => (
                     <Text key={index} size="sm" ml="md">
-                      • {valor.descricao}: {valor.valor}
+                      • {valor.descricao}: {valor.valor}{textoNumeroOpcao(valor) ? ` — ${textoNumeroOpcao(valor)}` : ''}
                     </Text>
                   ))}
                 </>
@@ -393,10 +391,15 @@ function VariaveisModal({
                 />
                 <TextInput
                   label="Valor"
-                  placeholder="Digite o valor"
+                  placeholder="Digite o valor (pode ficar em branco)"
                   value={valor}
                   onChange={handleValorChange}
-                  // description="O valor será sincronizado automaticamente com a descrição. Você pode editá-lo manualmente se necessário."
+                />
+                <TextInput
+                  label="Número"
+                  placeholder="Opcional"
+                  value={numero}
+                  onChange={(event) => setNumero(event.currentTarget.value)}
                 />
               </Group>
 
@@ -405,7 +408,7 @@ function VariaveisModal({
                   color="blue" 
                   onClick={handleAdicionar}
                   leftSection={<IconDeviceFloppy size={20} />}
-                  disabled={!descricao.trim() || !valor.trim()}
+                  disabled={!descricao.trim()}
                 >
                   Adicionar Valores
                 </Button>         
@@ -473,6 +476,11 @@ function VariaveisModal({
                           <Text size="sm">
                             <strong>Valor:</strong> {valor.valor}
                           </Text>
+                          {textoNumeroOpcao(valor) ? (
+                            <Text size="sm">
+                              <strong>Número:</strong> {textoNumeroOpcao(valor)}
+                            </Text>
+                          ) : null}
                         </Stack>
                         <Group gap="xs">
                           <Button

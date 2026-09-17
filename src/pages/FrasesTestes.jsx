@@ -1,5 +1,5 @@
 import { Group, Stack, Grid, Combobox, Input, useCombobox, Divider, TextInput, Button, Text, Modal, NavLink, Tooltip, Switch, Tabs, Select } from '@mantine/core';
-import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconHelp, IconGripVertical } from '@tabler/icons-react';
+import { IconFileText, IconQuote, IconVariable, IconLogout, IconReport, IconDeviceFloppy, IconEdit, IconTrash, IconEraser, IconFolder, IconFile, IconHelp, IconGripVertical, IconSum, IconTags } from '@tabler/icons-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -15,7 +15,9 @@ import Layout from '../components/Layout';
 import VariaveisModal from '../components/VariaveisModal';
 import FraseCampoComAudio from '../components/FraseCampoComAudio';
 import { extrairCatalogoVariaveisDefinicao } from '../utils/catalogoVariaveisFrase';
+import { montarOpcaoVariavel, textoNumeroOpcao, normalizarFaixasClassificacao } from '../utils/numeroOpcaoVariavel';
 import { notifications } from '@mantine/notifications';
+import FaixasClassificacaoEditor from '../components/FaixasClassificacaoEditor';
 
 function FrasesTestes() {
   const [username, setUsername] = useState('');
@@ -36,6 +38,7 @@ function FrasesTestes() {
   const [substituirPor, setSubstituirPor] = useState('');
   const [substituicoesOutras, setSubstituicoesOutras] = useState([]);
   const [conclusao, setConclusao] = useState('');
+  const [faixasClassificacao, setFaixasClassificacao] = useState([]);
   const [titulosFrases, setTitulosFrases] = useState([]);
   const [userId, setUserId] = useState(null);
   const [fraseId, setFraseId] = useState(null);
@@ -53,6 +56,8 @@ function FrasesTestes() {
   const [variavelLocalLabel, setVariavelLocalLabel] = useState('');
   const [variavelLocalDescricao, setVariavelLocalDescricao] = useState('');
   const [variavelLocalValor, setVariavelLocalValor] = useState('');
+  const [variavelLocalNumero, setVariavelLocalNumero] = useState('');
+  const [variavelLocalValorEditadoManualmente, setVariavelLocalValorEditadoManualmente] = useState(false);
   const [variavelLocalValores, setVariavelLocalValores] = useState([]);
   const [variavelLocalDelimitador, setVariavelLocalDelimitador] = useState('');
   const [variavelLocalUltimoDelimitador, setVariavelLocalUltimoDelimitador] = useState('');
@@ -265,6 +270,7 @@ function FrasesTestes() {
   const [substituirPorSemModelo, setSubstituirPorSemModelo] = useState('');
   const [substituicoesOutrasSemModelo, setSubstituicoesOutrasSemModelo] = useState([]);
   const [conclusaoSemModelo, setConclusaoSemModelo] = useState('');
+  const [faixasClassificacaoSemModelo, setFaixasClassificacaoSemModelo] = useState([]);
   const [fraseIdSemModelo, setFraseIdSemModelo] = useState(null);
   const [metodosSemModelo, setMetodosSemModelo] = useState([]);
   const [categoriasFiltradasSemModelo, setCategoriasFiltradasSemModelo] = useState([]);
@@ -655,6 +661,7 @@ function FrasesTestes() {
         setSubstituicaoFraseBase(c.substituicaoFraseBase);
         setSubstituicoesOutras(c.substituicoesOutras);
         setConclusao(c.conclusao);
+        setFaixasClassificacao(frase.frase.faixasClassificacao || []);
         
         // Mantém o texto do modelo atual no editor
         if (modeloId) {
@@ -672,6 +679,7 @@ function FrasesTestes() {
         setSubstituicaoFraseBase('');
         setSubstituicoesOutras([]);
         setConclusao('');
+        setFaixasClassificacao([]);
         setFraseId(null);
       }
     } catch (error) {
@@ -681,6 +689,7 @@ function FrasesTestes() {
       setSubstituicaoFraseBase('');
       setSubstituicoesOutras([]);
       setConclusao('');
+      setFaixasClassificacao([]);
       setFraseId(null);
     }
   };
@@ -845,7 +854,10 @@ function FrasesTestes() {
             procurarPor: converterCampoSalvar(s.procurarPor),
             substituirPor: converterCampoSalvar(s.substituirPor),
           })),
-          conclusao: converterCampoSalvar(conclusao)
+          conclusao: converterCampoSalvar(conclusao),
+          ...(normalizarFaixasClassificacao(faixasClassificacao).length
+            ? { faixasClassificacao: normalizarFaixasClassificacao(faixasClassificacao) }
+            : {}),
         }
       };
 
@@ -924,7 +936,10 @@ function FrasesTestes() {
             procurarPor: converterCampoSalvar(s.procurarPor),
             substituirPor: converterCampoSalvar(s.substituirPor),
           })),
-          conclusao: converterCampoSalvar(conclusao)
+          conclusao: converterCampoSalvar(conclusao),
+          ...(normalizarFaixasClassificacao(faixasClassificacao).length
+            ? { faixasClassificacao: normalizarFaixasClassificacao(faixasClassificacao) }
+            : {}),
         }
       };
 
@@ -1006,6 +1021,7 @@ function FrasesTestes() {
     setSubstituirPor('');
     setSubstituicoesOutras([]);
     setConclusao('');
+    setFaixasClassificacao([]);
     setFraseId(null);
     setNaoAssociarModelo(false);
   };
@@ -1163,6 +1179,7 @@ function FrasesTestes() {
     setSubstituirPorSemModelo('');
     setSubstituicoesOutrasSemModelo([]);
     setConclusaoSemModelo('');
+    setFaixasClassificacaoSemModelo([]);
     setFraseIdSemModelo(null);
   };
 
@@ -1217,7 +1234,10 @@ function FrasesTestes() {
             procurarPor: converterCampoSalvar(s.procurarPor),
             substituirPor: converterCampoSalvar(s.substituirPor),
           })),
-          conclusao: converterCampoSalvar(conclusaoSemModelo)
+          conclusao: converterCampoSalvar(conclusaoSemModelo),
+          ...(normalizarFaixasClassificacao(faixasClassificacaoSemModelo).length
+            ? { faixasClassificacao: normalizarFaixasClassificacao(faixasClassificacaoSemModelo) }
+            : {}),
         }
       };
 
@@ -1290,7 +1310,10 @@ function FrasesTestes() {
             procurarPor: converterCampoSalvar(s.procurarPor),
             substituirPor: converterCampoSalvar(s.substituirPor),
           })),
-          conclusao: converterCampoSalvar(conclusaoSemModelo)
+          conclusao: converterCampoSalvar(conclusaoSemModelo),
+          ...(normalizarFaixasClassificacao(faixasClassificacaoSemModelo).length
+            ? { faixasClassificacao: normalizarFaixasClassificacao(faixasClassificacaoSemModelo) }
+            : {}),
         }
       };
 
@@ -1442,12 +1465,14 @@ function FrasesTestes() {
         setSubstituicaoFraseBaseSemModelo(c.substituicaoFraseBase);
         setSubstituicoesOutrasSemModelo(c.substituicoesOutras);
         setConclusaoSemModelo(c.conclusao);
+        setFaixasClassificacaoSemModelo(frase.frase.faixasClassificacao || []);
       } else {
         // console.log('Frase não encontrada');
         setFraseBaseSemModelo('');
         setSubstituicaoFraseBaseSemModelo('');
         setSubstituicoesOutrasSemModelo([]);
         setConclusaoSemModelo('');
+        setFaixasClassificacaoSemModelo([]);
         setMetodosSemModelo([]);
         setFraseIdSemModelo(null);
       }
@@ -1457,6 +1482,7 @@ function FrasesTestes() {
       setSubstituicaoFraseBaseSemModelo('');
       setSubstituicoesOutrasSemModelo([]);
       setConclusaoSemModelo('');
+      setFaixasClassificacaoSemModelo([]);
       setMetodosSemModelo([]);
       setFraseIdSemModelo(null);
     }
@@ -1472,24 +1498,29 @@ function FrasesTestes() {
 
   // Funções para gerenciar variável local completa (novo formato)
   const handleAdicionarValorLocal = () => {
-    if (!variavelLocalDescricao.trim() || !variavelLocalValor.trim()) return;
+    if (!variavelLocalDescricao.trim()) return;
 
-    const novoValor = {
-      descricao: variavelLocalDescricao,
-      valor: variavelLocalValor
-    };
+    const novoValor = montarOpcaoVariavel(
+      variavelLocalDescricao,
+      variavelLocalValor,
+      variavelLocalNumero,
+    );
 
     setVariavelLocalValores([...variavelLocalValores, novoValor]);
     
     // Limpa os campos após adicionar
     setVariavelLocalDescricao('');
     setVariavelLocalValor('');
+    setVariavelLocalNumero('');
+    setVariavelLocalValorEditadoManualmente(false);
   };
 
   const handleEditarValorLocal = (index) => {
     const valor = variavelLocalValores[index];
     setVariavelLocalDescricao(valor.descricao);
     setVariavelLocalValor(valor.valor);
+    setVariavelLocalNumero(textoNumeroOpcao(valor));
+    setVariavelLocalValorEditadoManualmente(true);
     
     // Remove o valor atual
     setVariavelLocalValores(variavelLocalValores.filter((_, i) => i !== index));
@@ -1507,6 +1538,8 @@ function FrasesTestes() {
     setVariavelLocalLabel('');
     setVariavelLocalDescricao('');
     setVariavelLocalValor('');
+    setVariavelLocalNumero('');
+    setVariavelLocalValorEditadoManualmente(false);
     setVariavelLocalValores([]);
     setVariavelLocalDelimitador('');
     setVariavelLocalUltimoDelimitador('');
@@ -1866,7 +1899,7 @@ function FrasesTestes() {
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
-                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@). Digite @ para reutilizar uma variável já inserida.
+                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@); roxo = numeração {'({#N}, {#C}, {#LN}…)'}; laranja = {'{soma}'} / {'{classificacao}'}. Digite @ para reutilizar uma variável já inserida.
                   </Text>
                   <FraseCampoComAudio
                     ref={fraseBaseTipTapComModeloRef}
@@ -1902,6 +1935,26 @@ function FrasesTestes() {
                       }}
                     >
                       Inserir Variável Local
+                    </Button>
+                  </Tooltip>
+                  <Tooltip label="Entra no laudo como o total dos pontos">
+                    <Button
+                      variant="light"
+                      color="orange"
+                      leftSection={<IconSum size={20} />}
+                      onClick={() => fraseBaseTipTapComModeloRef.current?.insertScoreToken('soma')}
+                    >
+                      Soma
+                    </Button>
+                  </Tooltip>
+                  <Tooltip label="Entra no laudo como o rótulo da faixa (ex. TR4)">
+                    <Button
+                      variant="light"
+                      color="orange"
+                      leftSection={<IconTags size={20} />}
+                      onClick={() => fraseBaseTipTapComModeloRef.current?.insertScoreToken('classificacao')}
+                    >
+                      Classificação
                     </Button>
                   </Tooltip>
                 </Group>
@@ -2033,6 +2086,12 @@ function FrasesTestes() {
                   />
                 </Stack>
 
+                <Divider label="Classificação por pontos (opcional)" labelPosition="center" my="md" />
+                <FaixasClassificacaoEditor
+                  value={faixasClassificacao}
+                  onChange={setFaixasClassificacao}
+                />
+
                 {/* Botões */}
                 <Group justify="flex-end" mt="md">
                   <Button 
@@ -2157,7 +2216,7 @@ function FrasesTestes() {
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
-                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@). Digite @ para reutilizar uma variável já inserida.
+                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@); roxo = numeração {'({#N}, {#C}, {#LN}…)'}; laranja = {'{soma}'} / {'{classificacao}'}. Digite @ para reutilizar uma variável já inserida.
                   </Text>
                   <FraseCampoComAudio
                     ref={fraseBaseTipTapSemModeloRef}
@@ -2191,6 +2250,26 @@ function FrasesTestes() {
                       }}
                     >
                       Inserir Variável Local
+                    </Button>
+                  </Tooltip>
+                  <Tooltip label="Entra no laudo como o total dos pontos">
+                    <Button
+                      variant="light"
+                      color="orange"
+                      leftSection={<IconSum size={20} />}
+                      onClick={() => fraseBaseTipTapSemModeloRef.current?.insertScoreToken('soma')}
+                    >
+                      Soma
+                    </Button>
+                  </Tooltip>
+                  <Tooltip label="Entra no laudo como o rótulo da faixa (ex. TR4)">
+                    <Button
+                      variant="light"
+                      color="orange"
+                      leftSection={<IconTags size={20} />}
+                      onClick={() => fraseBaseTipTapSemModeloRef.current?.insertScoreToken('classificacao')}
+                    >
+                      Classificação
                     </Button>
                   </Tooltip>
                 </Group>
@@ -2321,6 +2400,12 @@ function FrasesTestes() {
                     minHeight={72}
                   />
                 </Stack>
+
+                <Divider label="Classificação por pontos (opcional)" labelPosition="center" my="md" />
+                <FaixasClassificacaoEditor
+                  value={faixasClassificacaoSemModelo}
+                  onChange={setFaixasClassificacaoSemModelo}
+                />
 
                 {/* Botões */}
                 <Group justify="flex-end" mt="md">
@@ -2467,14 +2552,25 @@ function FrasesTestes() {
                   onChange={(event) => {
                     const novoValor = event.currentTarget.value;
                     setVariavelLocalDescricao(novoValor);
-                    setVariavelLocalValor(novoValor);
+                    if (!variavelLocalValorEditadoManualmente) {
+                      setVariavelLocalValor(novoValor);
+                    }
                   }}
                 />
                 <TextInput
                   label="Valor"
-                  placeholder="Digite o valor"
+                  placeholder="Digite o valor (pode ficar em branco)"
                   value={variavelLocalValor}
-                  onChange={(event) => setVariavelLocalValor(event.currentTarget.value)}
+                  onChange={(event) => {
+                    setVariavelLocalValor(event.currentTarget.value);
+                    setVariavelLocalValorEditadoManualmente(true);
+                  }}
+                />
+                <TextInput
+                  label="Número"
+                  placeholder="Opcional"
+                  value={variavelLocalNumero}
+                  onChange={(event) => setVariavelLocalNumero(event.currentTarget.value)}
                 />
               </Group>
 
@@ -2483,7 +2579,7 @@ function FrasesTestes() {
                   color="blue" 
                   onClick={handleAdicionarValorLocal}
                   leftSection={<IconDeviceFloppy size={20} />}
-                  disabled={!variavelLocalDescricao.trim() || !variavelLocalValor.trim()}
+                  disabled={!variavelLocalDescricao.trim()}
                 >
                   Adicionar Valores
                 </Button>
@@ -2579,6 +2675,11 @@ function FrasesTestes() {
                                     <Text size="sm">
                                       <strong>Valor:</strong> {valor.valor}
                                     </Text>
+                                    {textoNumeroOpcao(valor) ? (
+                                      <Text size="sm">
+                                        <strong>Número:</strong> {textoNumeroOpcao(valor)}
+                                      </Text>
+                                    ) : null}
                                   </Stack>
                                   <Group gap="xs">
                                     <Button

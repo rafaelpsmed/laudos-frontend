@@ -3,6 +3,7 @@ import {
   converterQuebrasDeLinha,
   aplicarFormatacao,
 } from './fraseEngine';
+import { isTokenSomaClassificacao } from './numeroOpcaoVariavel';
 
 /** Separador invisível entre trechos (base, substituições outras, conclusão) no modal de variáveis. */
 export const SEP_SEGMENTO_VARIAVEIS = '\uE000';
@@ -272,7 +273,10 @@ export async function buscarVariaveisNoTexto(texto, frase = null) {
       
       while ((match = regexVariaveis.exec(textoPuro)) !== null) {
         const tituloVariavel = match[1];
-        if (String(tituloVariavel).startsWith('@')) {
+        if (String(tituloVariavel).startsWith('@') || String(tituloVariavel).startsWith('#')) {
+          continue;
+        }
+        if (isTokenSomaClassificacao(tituloVariavel)) {
           continue;
         }
         // Procura a variável pelo título exato

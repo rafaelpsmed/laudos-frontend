@@ -26,6 +26,7 @@ import pluralize from '../utils/pluralizar';
 
 // Função para transcrição de áudio
 import { useAudioTranscription } from '../utils/useAudioTranscription';
+import { AutoNumber, AutoNumberRenumber } from '../utils/autoNumeracaoFrase';
 
 // Extensão customizada para LineHeight
 const LineHeight = Extension.create({
@@ -256,6 +257,9 @@ const editorStyles = {
   '.ProseMirror .resize-cursor': {
     cursor: 'ew-resize',
     cursor: 'col-resize',
+  },
+  '.ProseMirror .laudo-auto-number': {
+    fontWeight: 600,
   },
 };
 
@@ -542,6 +546,8 @@ const TextEditor = forwardRef(({
         depth: 50,
         newGroupDelay: 500,
       }),
+      AutoNumber,
+      AutoNumberRenumber,
       Link,
       LineHeight,
       TextStyle.configure({

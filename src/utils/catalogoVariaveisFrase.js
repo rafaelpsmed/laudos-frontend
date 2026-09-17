@@ -1,3 +1,5 @@
+import { isTokenSomaClassificacao } from './numeroOpcaoVariavel';
+
 /**
  * Lista definições de variáveis já presentes nos textos da frase
  * (chips globais `{Titulo}` e locais `[LOCAL: Titulo]`). Refs não entram.
@@ -28,7 +30,9 @@ export function extrairCatalogoVariaveisDefinicao(...textos) {
     while ((match = globRe.exec(t)) !== null) {
       const inner = match[1];
       if (inner.startsWith('@')) continue;
+      if (inner.startsWith('#')) continue;
       if (inner.includes('"tipo"')) continue;
+      if (isTokenSomaClassificacao(inner)) continue;
       add('global', inner);
     }
   }
