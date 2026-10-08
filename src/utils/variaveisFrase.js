@@ -65,15 +65,31 @@ function aplicarReferenciasNoTexto(texto, { variaveisNormais, variaveisPorTitulo
   return out;
 }
 
+function textoImediato(resto) {
+  return String(resto || '')
+    .replace(/^(?:\s|&nbsp;|<[^>]+>)*/i, ' ')
+    .trimStart();
+}
+
+function valorSemUnidadeRepetida(valor, resto) {
+  const v = String(valor ?? '').trim();
+  if (!v) return v;
+  if (/^cm\b/i.test(textoImediato(resto))) {
+    return v.replace(/\s*cm\s*$/i, '').trim();
+  }
+  return v;
+}
+
 function aplicarMedidasNoTexto(texto, valor) {
+  const trocar = (item, offset, full) => {
+    if (item === undefined || String(item).trim() === '') return '$';
+    return valorSemUnidadeRepetida(item, full.slice(offset + 1));
+  };
   if (Array.isArray(valor)) {
     let i = 0;
-    return texto.replace(/\$/g, () => {
-      const v = valor[i++];
-      return v !== undefined && String(v).trim() !== '' ? String(v) : '$';
-    });
+    return texto.replace(/\$/g, (match, offset, full) => trocar(valor[i++], offset, full));
   }
-  return texto.replace(/\$/g, valor);
+  return texto.replace(/\$/g, (match, offset, full) => trocar(valor, offset, full));
 }
 
 export function aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSelecionados) {
@@ -114,16 +130,19 @@ export function aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSeleci
 
   Object.entries(variaveisNormais).forEach(([chave, valor]) => {
     const regex = new RegExp(`{${escapeRegExp(chave)}}`, 'g');
-    textoFinal = textoFinal.replace(regex, valor);
+    textoFinal = textoFinal.replace(regex, (match, offset, full) => (
+      valorSemUnidadeRepetida(valor, full.slice(offset + match.length))
+    ));
   });
 
   Object.entries(variaveisPorTitulo).forEach(([tituloBase, instancias]) => {
     const regex = new RegExp(`{${escapeRegExp(tituloBase)}}`, 'g');
     let ocorrenciasEncontradas = 0;
-    textoFinal = textoFinal.replace(regex, (match) => {
+    textoFinal = textoFinal.replace(regex, (match, offset, full) => {
       const v = instancias[ocorrenciasEncontradas];
       ocorrenciasEncontradas += 1;
-      return v !== undefined ? v : match;
+      if (v === undefined) return match;
+      return valorSemUnidadeRepetida(v, full.slice(offset + match.length));
     });
   });
 

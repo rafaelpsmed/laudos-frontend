@@ -1,4 +1,4 @@
-import { Title, Text, Paper, Group, Button, Textarea, Stack, Alert, Grid, ActionIcon, ScrollArea, Box, Loader } from '@mantine/core';
+import { Title, Text, Paper, Group, Button, Textarea, Stack, Alert, Grid, ActionIcon, ScrollArea, Box, Loader, SegmentedControl } from '@mantine/core';
 import { IconBrain, IconRobot, IconAlertCircle, IconCheck, IconMicrophone, IconMicrophoneOff, IconSend, IconUser, IconTrash } from '@tabler/icons-react';
 import { useState, useRef, useEffect } from 'react';
 import Layout from '../components/Layout';
@@ -6,6 +6,7 @@ import TextEditor from '../components/TextEditor';
 import MetodosSelect from '../components/MetodosSelect';
 import TituloCombobox from '../components/TituloCombobox';
 import SelecionarVariaveisModal from '../components/SelecionarVariaveisModal';
+import RevisaoLaudoPanel from '../components/RevisaoLaudoPanel';
 import api from '../api';
 import { marked } from 'marked';
 import { useAudioTranscription } from '../utils/useAudioTranscription';
@@ -24,6 +25,10 @@ import {
     converterQuebrasDeLinha,
     fraseTemVariaveis,
     inserirComplementoFormatadoNoEditor,
+    extrairParagrafosDoLaudo,
+    listarLinhasDoLaudo,
+    aplicarAcrescimosEstruturados,
+    htmlParaTextoPuro,
 } from '../utils/fraseEngine';
 import {
     montarTextoCompostoParaVariaveisDaFrase,
@@ -32,6 +37,18 @@ import {
     textoTemVariaveisParaModal,
 } from '../utils/variaveisFrase';
 import { resolverTextoClassificacao } from '../utils/numeroOpcaoVariavel';
+import {
+    aplicarEscolhasAutomaticas,
+    montarPedidoEscolhaAutomatica,
+} from '../utils/escolhaAutomaticaVariaveis';
+import {
+    revisarLaudoLocal,
+    normalizarPendenciasIA,
+    aplicarPendenciaNoEditor,
+    filtrarPendenciasVigentes,
+} from '../utils/revisaoLaudo';
+
+const htmlTemTexto = (html) => htmlParaTextoPuro(html || '').trim().length > 0;
 
 function IA() {
     const [isGeneratingAnalise, setIsGeneratingAnalise] = useState(false);
@@ -60,7 +77,83 @@ function IA() {
     const [textoPuroParaModal, setTextoPuroParaModal] = useState('');
     const [tituloFraseModal, setTituloFraseModal] = useState('');
     const [frasePendenteVariaveis, setFrasePendenteVariaveis] = useState(null);
+    const [modoVariaveis, setModoVariaveis] = useState('manual');
     const chatVariaveisCallbackRef = useRef(null);
+    const modoVariaveisRef = useRef('manual');
+    const processarFrasesCatalogoRef = useRef(null);
+    const ancorasFraseRef = useRef({});
+    modoVariaveisRef.current = modoVariaveis;
+
+    // Revisão final (pendências por item, nunca reescreve o laudo)
+    const [pendenciasRevisao, setPendenciasRevisao] = useState([]);
+    const [revisandoLaudo, setRevisandoLaudo] = useState(false);
+    const [erroRevisao, setErroRevisao] = useState('');
+    const ignoradasRevisaoRef = useRef(new Set());
+    const revisaoSeqRef = useRef(0);
+
+    const chavePendencia = (p) => `${p.tipo}|${p.linha}|${p.trecho}|${p.motivo}`;
+
+    const revisarLaudo = async ({ textoDitado = '', comIA = true } = {}) => {
+        const editor = editorAnaliseRef.current?.editor;
+        if (!editor) return;
+        const html = editor.getHTML();
+        if (!htmlTemTexto(html)) {
+            setPendenciasRevisao([]);
+            return;
+        }
+        const seq = revisaoSeqRef.current + 1;
+        revisaoSeqRef.current = seq;
+        setErroRevisao('');
+
+        const { linhas, pendencias: locais } = revisarLaudoLocal(html);
+        const naoIgnorada = (p) => !ignoradasRevisaoRef.current.has(chavePendencia(p));
+        setPendenciasRevisao(locais.filter(naoIgnorada));
+
+        if (!comIA || !linhas.length) return;
+        setRevisandoLaudo(true);
+        try {
+            const resp = await api.post('/api/ia/revisar_laudo/', {
+                linhas,
+                texto_ditado: textoDitado,
+            });
+            if (revisaoSeqRef.current !== seq) return; // revisão mais nova em andamento
+            const daIA = normalizarPendenciasIA(resp.data?.pendencias, locais);
+            const editorAgora = editorAnaliseRef.current?.editor;
+            setPendenciasRevisao(
+                filtrarPendenciasVigentes(editorAgora, [...locais, ...daIA]).filter(naoIgnorada),
+            );
+        } catch (error) {
+            if (revisaoSeqRef.current === seq) {
+                setErroRevisao(error.response?.data?.error || 'Não foi possível revisar com IA.');
+            }
+        } finally {
+            if (revisaoSeqRef.current === seq) setRevisandoLaudo(false);
+        }
+    };
+
+    const aplicarPendencia = (pendencia) => {
+        const editor = editorAnaliseRef.current?.editor;
+        if (!editor) return;
+        aplicarPendenciaNoEditor(editor, pendencia);
+        localStorage.setItem(IA_LAUDO_AUTOSAVE_KEY, editor.getHTML());
+        setPendenciasRevisao((prev) => filtrarPendenciasVigentes(
+            editor,
+            prev.filter((p) => p.id !== pendencia.id),
+        ));
+    };
+
+    const aplicarTodasPendencias = () => {
+        const editor = editorAnaliseRef.current?.editor;
+        if (!editor) return;
+        pendenciasRevisao.filter((p) => p.aplicavel).forEach((p) => aplicarPendenciaNoEditor(editor, p));
+        localStorage.setItem(IA_LAUDO_AUTOSAVE_KEY, editor.getHTML());
+        setPendenciasRevisao((prev) => filtrarPendenciasVigentes(editor, prev.filter((p) => !p.aplicavel)));
+    };
+
+    const ignorarPendencia = (pendencia) => {
+        ignoradasRevisaoRef.current.add(chavePendencia(pendencia));
+        setPendenciasRevisao((prev) => prev.filter((p) => p.id !== pendencia.id));
+    };
 
     const [todasFrases, setTodasFrases] = useState([]);
 
@@ -259,6 +352,9 @@ function IA() {
         }
         localStorage.removeItem(IA_LAUDO_AUTOSAVE_KEY);
         setConclusaoDoModelo('');
+        setPendenciasRevisao([]);
+        setErroRevisao('');
+        ignoradasRevisaoRef.current = new Set();
     };
 
     const limparChat = () => {
@@ -311,6 +407,29 @@ function IA() {
         const laudoAtual = editor.getText()?.trim() || '';
         if (!laudoAtual) {
             return { ok: false, skipped: true };
+        }
+
+        // Caminho preferido: acréscimos já posicionados (substitui '#', após o órgão, conclusão).
+        const linhas = listarLinhasDoLaudo(editor.getHTML());
+        if (linhas.length) {
+            try {
+                const respEstruturado = await api.post('/api/ia/complementar_laudo/', {
+                    linhas,
+                    pedido: complemento,
+                    frases_aplicadas: frasesAplicadas,
+                    historico,
+                });
+                const acrescimos = respEstruturado.data?.acrescimos;
+                if (Array.isArray(acrescimos)) {
+                    if (acrescimos.length) {
+                        aplicarAcrescimosEstruturados(editor, acrescimos);
+                        localStorage.setItem(IA_LAUDO_AUTOSAVE_KEY, editor.getHTML());
+                    }
+                    return { ok: true, modo: 'complementar' };
+                }
+            } catch (error) {
+                console.warn('complementar_laudo indisponível; usando complemento em texto.', error);
+            }
         }
 
         const response = await api.post('/api/ia/gerar_laudo_radiologia/', {
@@ -429,6 +548,7 @@ function IA() {
                 medida,
                 conclusaoDoModelo,
                 ignoreVariaveis: true,
+                ancoraParagrafo: ancorasFraseRef.current[fraseObj.id] || null,
             });
         }
 
@@ -444,6 +564,7 @@ function IA() {
                 medida,
                 conclusaoDoModelo,
                 ignoreVariaveis: true,
+                ancoraParagrafo: ancorasFraseRef.current[fraseObj.id] || null,
             });
         }
 
@@ -461,6 +582,38 @@ function IA() {
         setTituloFraseModal(fraseObj.tituloFrase || 'Frase');
         setModalVariaveisAberto(true);
         return { pending: true };
+    };
+
+    const aplicarFraseComValores = (fraseObj, montado, valores, soma = 0) => {
+        const editor = editorAnaliseRef.current?.editor;
+        if (!editor || !montado) {
+            return { success: false, reason: 'Editor não disponível.' };
+        }
+        let textoFinal = aplicarValoresSelecionadosAoTexto(montado.textoComposto, valores);
+        textoFinal = resolverTextoClassificacao(
+            textoFinal,
+            soma,
+            fraseObj?.frase?.faixasClassificacao,
+        );
+        const splitResult = splitPartesResolvidas(textoFinal, {
+            sep: montado.sep,
+            n: montado.nSegmentos,
+        });
+        const partes = splitResult.partesResolvidas || [splitResult.textoFinal || textoFinal];
+        const resultado = applyFraseHtmlResolvidaToEditor(
+            editor,
+            fraseObj,
+            partes,
+            {
+                conclusaoDoModelo,
+                ancoraParagrafo: ancorasFraseRef.current[fraseObj.id] || null,
+            },
+        );
+        if (resultado.success) {
+            setConclusaoDoModelo('');
+            localStorage.setItem(IA_LAUDO_AUTOSAVE_KEY, editor.getHTML());
+        }
+        return resultado;
     };
 
     const abrirModalVariaveisParaModelo = async (textoModelo, tituloModelo) => {
@@ -527,7 +680,10 @@ function IA() {
                 editor,
                 frasePendenteVariaveis.frase,
                 partes,
-                { conclusaoDoModelo }
+                {
+                    conclusaoDoModelo,
+                    ancoraParagrafo: ancorasFraseRef.current[frasePendenteVariaveis.frase?.id] || null,
+                }
             );
 
             if (resultado.success) {
@@ -541,28 +697,41 @@ function IA() {
                     setIsGeneratingAnalise(true);
                     try {
                         const frasesAplicadas = [...(callback.aplicadas || []), resultado.titulo];
-                        const finalizado = await finalizarPedidoCatalogo({
-                            pedidoComplementar: callback.pedidoComplementar,
-                            historico: callback.historico || [],
-                            aplicadas: frasesAplicadas,
-                            avisos: callback.avisos || [],
-                            mensagemAssistenteBase: callback.mensagemAssistenteBase,
-                        });
+                        if (callback.restantes?.length) {
+                            await processarFrasesCatalogoRef.current?.({
+                                frases: callback.restantes,
+                                textoPedido: callback.textoPedido,
+                                pedidoComplementar: callback.pedidoComplementar,
+                                historico: callback.historico || [],
+                                aplicadas: frasesAplicadas,
+                                avisos: callback.avisos || [],
+                                mensagemAssistenteBase: callback.mensagemAssistenteBase,
+                            });
+                        } else {
+                            const finalizado = await finalizarPedidoCatalogo({
+                                pedidoComplementar: callback.pedidoComplementar,
+                                historico: callback.historico || [],
+                                aplicadas: frasesAplicadas,
+                                avisos: callback.avisos || [],
+                                mensagemAssistenteBase: callback.mensagemAssistenteBase,
+                            });
+                            revisarLaudo({ textoDitado: callback.textoPedido });
 
-                        setSucessoAnalise(
-                            finalizado.editouLaudo
-                                ? `Frase "${resultado.titulo}" aplicada e laudo complementado.`
-                                : `Frase "${resultado.titulo}" aplicada ao laudo.`
-                        );
+                            setSucessoAnalise(
+                                finalizado.editouLaudo
+                                    ? `Frase "${resultado.titulo}" aplicada e laudo complementado.`
+                                    : `Frase "${resultado.titulo}" aplicada ao laudo.`
+                            );
 
-                        setMessages((prev) => [
-                            ...prev,
-                            {
-                                id: `assistant-${Date.now()}`,
-                                role: 'assistant',
-                                content: finalizado.mensagemAssistente,
-                            },
-                        ]);
+                            setMessages((prev) => [
+                                ...prev,
+                                {
+                                    id: `assistant-${Date.now()}`,
+                                    role: 'assistant',
+                                    content: finalizado.mensagemAssistente,
+                                },
+                            ]);
+                        }
                     } catch (error) {
                         console.error('Erro ao complementar laudo após modal:', error);
                         setErroAnalise('Frase aplicada, mas falha ao completar o laudo com IA.');
@@ -641,6 +810,191 @@ function IA() {
         }
     };
 
+    const processarFrasesCatalogo = async ({
+        frases,
+        textoPedido,
+        pedidoComplementar,
+        historico,
+        aplicadas = [],
+        avisos = [],
+        mensagemAssistenteBase,
+    }) => {
+        const modoAuto = modoVariaveisRef.current === 'automatico';
+        const aplicadasAgora = [...aplicadas];
+        const avisosAgora = [...avisos];
+        const mapas = {};
+        const escolhasPorId = {};
+
+        const editorAtual = editorAnaliseRef.current?.editor;
+        const paragrafosLaudo = extrairParagrafosDoLaudo(editorAtual?.getHTML?.() || '');
+        if (paragrafosLaudo.length && frases.length) {
+            try {
+                const respLoc = await api.post('/api/ia/localizar_frases/', {
+                    paragrafos: paragrafosLaudo,
+                    frases: frases.map((item) => ({
+                        id: item.id,
+                        titulo: item.tituloFrase,
+                        resumo: String(item.frase?.fraseBase || '').replace(/<[^>]+>/g, ' ').slice(0, 180),
+                    })),
+                });
+                const ancoras = {};
+                (respLoc.data.frases || []).forEach((frase) => {
+                    if (frase.paragrafo >= 0 && paragrafosLaudo[frase.paragrafo]) {
+                        ancoras[frase.id] = paragrafosLaudo[frase.paragrafo];
+                    }
+                });
+                ancorasFraseRef.current = ancoras;
+            } catch {
+                ancorasFraseRef.current = {};
+            }
+        } else {
+            ancorasFraseRef.current = {};
+        }
+
+        if (modoAuto && frases.length) {
+            const pedidos = [];
+            for (const item of frases) {
+                const fraseObj = {
+                    id: item.id,
+                    tituloFrase: item.tituloFrase,
+                    categoriaFrase: item.categoriaFrase,
+                    frase: item.frase,
+                };
+                if (!fraseTemVariaveis(fraseObj, item.medida)) continue;
+                const montado = await montarTextoCompostoParaVariaveisDaFrase(fraseObj);
+                if (!montado.temVariaveis) continue;
+                const { pedido, mapa } = montarPedidoEscolhaAutomatica(
+                    fraseObj.id,
+                    fraseObj.tituloFrase,
+                    montado.resultado,
+                );
+                if (!pedido.campos.length) continue;
+                pedidos.push(pedido);
+                mapas[fraseObj.id] = { mapa, montado, fraseObj };
+            }
+            if (pedidos.length) {
+                try {
+                    const resp = await api.post('/api/ia/escolher_opcoes/', {
+                        texto: textoPedido,
+                        frases: pedidos,
+                    });
+                    (resp.data.frases || []).forEach((frase) => {
+                        escolhasPorId[frase.id] = frase.escolhas || [];
+                    });
+                } catch (error) {
+                    avisosAgora.push('Não foi possível marcar as opções automaticamente. O modal será aberto.');
+                }
+            }
+        }
+
+        for (let i = 0; i < frases.length; i += 1) {
+            const item = frases[i];
+            const fraseObj = {
+                id: item.id,
+                tituloFrase: item.tituloFrase,
+                categoriaFrase: item.categoriaFrase,
+                frase: item.frase,
+            };
+            const pacote = mapas[item.id];
+
+            if (modoAuto && pacote) {
+                let auto = aplicarEscolhasAutomaticas(pacote.mapa, escolhasPorId[item.id] || []);
+                if (item.medida && (auto.valores.$ == null || auto.valores.$ === '')) {
+                    const faltando = auto.faltando.filter((nome) => nome !== 'medida');
+                    auto = {
+                        ...auto,
+                        valores: { ...auto.valores, $: item.medida },
+                        faltando,
+                        completo: faltando.length === 0,
+                        resumo: auto.resumo || String(item.medida),
+                    };
+                }
+                if (auto.completo) {
+                    const aplicado = aplicarFraseComValores(fraseObj, pacote.montado, auto.valores, auto.soma);
+                    if (aplicado.success) {
+                        aplicadasAgora.push(auto.resumo ? `${aplicado.titulo}: ${auto.resumo}` : aplicado.titulo);
+                        continue;
+                    }
+                    avisosAgora.push(aplicado.reason || `Não foi possível aplicar "${fraseObj.tituloFrase}".`);
+                } else if (auto.faltando.length) {
+                    avisosAgora.push(
+                        `Preencha "${fraseObj.tituloFrase}" no modal (faltou: ${auto.faltando.join(', ')}).`,
+                    );
+                }
+            }
+
+            const resultado = await abrirModalVariaveisParaFrase(fraseObj, item.medida);
+            if (resultado.pending) {
+                chatVariaveisCallbackRef.current = {
+                    textoPedido,
+                    pedidoComplementar,
+                    historico,
+                    aplicadas: aplicadasAgora,
+                    avisos: avisosAgora,
+                    mensagemAssistenteBase,
+                    restantes: frases.slice(i + 1),
+                };
+                const mensagemAssistente = montarMensagemAssistenteCatalogo(
+                    aplicadasAgora,
+                    avisosAgora,
+                    mensagemAssistenteBase,
+                    false,
+                );
+                setSucessoAnalise(`Preencha as variáveis de "${fraseObj.tituloFrase}" para continuar.`);
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: `assistant-${Date.now()}`,
+                        role: 'assistant',
+                        content: mensagemAssistente,
+                    },
+                ]);
+                return;
+            }
+            if (resultado.success) {
+                aplicadasAgora.push(resultado.titulo);
+            } else if (resultado.reason) {
+                avisosAgora.push(resultado.reason);
+            }
+        }
+
+        if (aplicadasAgora.length > 0) {
+            setConclusaoDoModelo('');
+        }
+        const editor = editorAnaliseRef.current?.editor;
+        if (editor) {
+            localStorage.setItem(IA_LAUDO_AUTOSAVE_KEY, editor.getHTML());
+        }
+
+        const finalizado = await finalizarPedidoCatalogo({
+            pedidoComplementar,
+            historico,
+            aplicadas: aplicadasAgora,
+            avisos: avisosAgora,
+            mensagemAssistenteBase,
+        });
+        revisarLaudo({ textoDitado: textoPedido });
+        const partesSucesso = [];
+        if (aplicadasAgora.length > 0) {
+            partesSucesso.push(`${aplicadasAgora.length} frase(s) aplicada(s)`);
+        }
+        if (finalizado.editouLaudo) {
+            partesSucesso.push('laudo complementado com IA');
+        }
+        setSucessoAnalise(
+            partesSucesso.length > 0 ? `${partesSucesso.join(' e ')}.` : 'Pedido processado.',
+        );
+        setMessages((prev) => [
+            ...prev,
+            {
+                id: `assistant-${Date.now()}`,
+                role: 'assistant',
+                content: finalizado.mensagemAssistente,
+            },
+        ]);
+    };
+    processarFrasesCatalogoRef.current = processarFrasesCatalogo;
+
     const handleEnviarMensagem = async () => {
         const texto = textoAnalise.trim();
         if (!texto) {
@@ -679,106 +1033,18 @@ function IA() {
                 });
 
                 const frasesResolvidas = response.data.frases || [];
-                const editor = editorAnaliseRef.current?.editor;
-                const aplicadas = [];
-                const avisos = [];
-                let modalAberto = false;
-                let fraseModalTitulo = '';
-
                 let pedidoComplementar = (response.data.pedido_complementar || '').trim();
-
-                if (editor && frasesResolvidas.length > 0) {
-                    for (const item of frasesResolvidas) {
-                        if (modalAberto) break;
-
-                        const fraseObj = {
-                            id: item.id,
-                            tituloFrase: item.tituloFrase,
-                            categoriaFrase: item.categoriaFrase,
-                            frase: item.frase,
-                        };
-                        const resultado = await abrirModalVariaveisParaFrase(fraseObj, item.medida);
-
-                        if (resultado.pending) {
-                            fraseModalTitulo = fraseObj.tituloFrase;
-                            avisos.push(`Preencha as variáveis da frase "${fraseObj.tituloFrase}" no modal.`);
-                            modalAberto = true;
-                        } else if (resultado.success) {
-                            aplicadas.push(resultado.titulo);
-                        } else {
-                            avisos.push(resultado.reason);
-                        }
-                    }
-                    if (aplicadas.length > 0) {
-                        setConclusaoDoModelo('');
-                    }
-                    localStorage.setItem(IA_LAUDO_AUTOSAVE_KEY, editor.getHTML());
-                }
-
-                if (!pedidoComplementar && aplicadas.length === 0 && frasesResolvidas.length === 0) {
+                if (!pedidoComplementar && frasesResolvidas.length === 0) {
                     pedidoComplementar = texto.trim();
                 }
 
-                if (modalAberto) {
-                    chatVariaveisCallbackRef.current = {
-                        textoPedido: texto,
-                        pedidoComplementar,
-                        historico,
-                        aplicadas: [...aplicadas],
-                        avisos: [...avisos],
-                        mensagemAssistenteBase: response.data.mensagem_assistente,
-                    };
-
-                    const mensagemAssistente = montarMensagemAssistenteCatalogo(
-                        aplicadas,
-                        avisos,
-                        response.data.mensagem_assistente,
-                        false
-                    );
-
-                    setSucessoAnalise(`Preencha as variáveis de "${fraseModalTitulo}" para continuar.`);
-
-                    setMessages((prev) => [
-                        ...prev,
-                        {
-                            id: `assistant-${Date.now()}`,
-                            role: 'assistant',
-                            content: mensagemAssistente,
-                        },
-                    ]);
-                    return;
-                }
-
-                const finalizado = await finalizarPedidoCatalogo({
+                await processarFrasesCatalogo({
+                    frases: frasesResolvidas,
+                    textoPedido: texto,
                     pedidoComplementar,
                     historico,
-                    aplicadas,
-                    avisos,
                     mensagemAssistenteBase: response.data.mensagem_assistente,
                 });
-
-                const partesSucesso = [];
-                if (aplicadas.length > 0) {
-                    partesSucesso.push(`${aplicadas.length} frase(s) aplicada(s)`);
-                }
-                if (finalizado.editouLaudo) {
-                    partesSucesso.push('laudo complementado com IA');
-                }
-
-                setSucessoAnalise(
-                    partesSucesso.length > 0
-                        ? `${partesSucesso.join(' e ')}.`
-                        : 'Pedido processado.'
-                );
-
-                setMessages((prev) => [
-                    ...prev,
-                    {
-                        id: `assistant-${Date.now()}`,
-                        role: 'assistant',
-                        content: finalizado.mensagemAssistente,
-                    },
-                ]);
                 return;
             }
 
@@ -809,6 +1075,7 @@ function IA() {
                     console.error('Erro ao aplicar formatação, inserindo texto simples:', error);
                     editor.commands.setContent(laudoGerado);
                 }
+                revisarLaudo({ textoDitado: texto });
             }
 
             const mensagemSucesso =
@@ -977,6 +1244,21 @@ function IA() {
                                     setTitulosDisponiveis={setTitulosDisponiveis}
                                     required={false}
                                 />
+                                <Text size="sm" fw={600}>Como preencher as opções</Text>
+                                <SegmentedControl
+                                    fullWidth
+                                    value={modoVariaveis}
+                                    onChange={setModoVariaveis}
+                                    data={[
+                                        { label: 'Manual', value: 'manual' },
+                                        { label: 'Automático', value: 'automatico' },
+                                    ]}
+                                />
+                                <Text size="xs" c="dimmed">
+                                    {modoVariaveis === 'automatico'
+                                        ? 'Usa o que você falou para marcar as opções. Se faltar alguma, o modal abre.'
+                                        : 'Abre o modal para você escolher as opções de cada frase.'}
+                                </Text>
                                 {modeloSelecionado && (
                                     <Text size="xs" c="dimmed">
                                         Modo catálogo: {modeloSelecionado.titulo} — {frasesCatalogo.length} frase(s) disponível(is)
@@ -1125,6 +1407,18 @@ function IA() {
                                 autoLoadOnMount
                             />
                         </Box>
+
+                        <RevisaoLaudoPanel
+                            pendencias={pendenciasRevisao}
+                            revisando={revisandoLaudo}
+                            erro={erroRevisao}
+                            onRevisar={() => revisarLaudo({
+                                textoDitado: [...messages].reverse().find((m) => m.role === 'user')?.content || '',
+                            })}
+                            onAplicar={aplicarPendencia}
+                            onIgnorar={ignorarPendencia}
+                            onAplicarTodas={aplicarTodasPendencias}
+                        />
 
                         <Group justify="center" mt="md" gap="md">
                             <Button
