@@ -96,7 +96,9 @@ export function montarPedidoEscolhaAutomatica(fraseId, titulo, resultado) {
         'Grupo de opções',
       );
     } else if (el.tipo === 'medida') {
-      registrar('$', 'medida', [], `Medida ${((el.dados?.indice ?? 0) + 1)}`);
+      const rotulo = String(el.dados?.rotulo || '').trim();
+      const base = `Medida ${((el.dados?.indice ?? 0) + 1)}`;
+      registrar('$', 'medida', [], rotulo ? `${base}: ${rotulo}` : base);
     }
   });
 

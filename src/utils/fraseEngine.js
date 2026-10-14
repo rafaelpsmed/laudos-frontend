@@ -135,8 +135,8 @@ function medidaSemUnidadeRepetida(medida, resto) {
 }
 
 function substituirCifraoPorMedida(texto, medida) {
-  return String(texto).replace(/\$/g, (match, offset, full) => (
-    medidaSemUnidadeRepetida(medida, full.slice(offset + 1))
+  return String(texto).replace(/\$\(([^)]*)\)|\$/g, (match, _rotulo, offset, full) => (
+    medidaSemUnidadeRepetida(medida, full.slice(offset + match.length))
   ));
 }
 

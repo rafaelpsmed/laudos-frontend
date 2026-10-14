@@ -80,16 +80,23 @@ function valorSemUnidadeRepetida(valor, resto) {
   return v;
 }
 
+/** `$` ou `$(rótulo)`. O grupo 1 é o rótulo, ausente no `$` sozinho. */
+const TOKEN_MEDIDA_RE = /\$\(([^)]*)\)|\$/g;
+
 function aplicarMedidasNoTexto(texto, valor) {
-  const trocar = (item, offset, full) => {
-    if (item === undefined || String(item).trim() === '') return '$';
-    return valorSemUnidadeRepetida(item, full.slice(offset + 1));
+  const trocar = (match, offset, full, item) => {
+    if (item === undefined || String(item).trim() === '') return match;
+    return valorSemUnidadeRepetida(item, full.slice(offset + match.length));
   };
   if (Array.isArray(valor)) {
     let i = 0;
-    return texto.replace(/\$/g, (match, offset, full) => trocar(valor[i++], offset, full));
+    return texto.replace(TOKEN_MEDIDA_RE, (match, _rotulo, offset, full) => (
+      trocar(match, offset, full, valor[i++])
+    ));
   }
-  return texto.replace(/\$/g, (match, offset, full) => trocar(valor, offset, full));
+  return texto.replace(TOKEN_MEDIDA_RE, (match, _rotulo, offset, full) => (
+    trocar(match, offset, full, valor)
+  ));
 }
 
 export function aplicarValoresSelecionadosAoTexto(textoTemporario, valoresSelecionados) {
@@ -735,14 +742,19 @@ export async function buscarVariaveisNoTexto(texto, frase = null) {
         });
       }
 
-      // Verifica se tem medida ($) - adiciona UMA entrada para CADA ocorrência
-      const regexMedidas = /\$/g;
+      // Verifica se tem medida ($) - adiciona UMA entrada para CADA ocorrência.
+      // $(rótulo) nomeia o campo; o texto entre parênteses não entra no laudo.
+      const regexMedidas = new RegExp(TOKEN_MEDIDA_RE.source, 'g');
       let matchMedida;
       let indiceMedida = 0;
       while ((matchMedida = regexMedidas.exec(textoPuro)) !== null) {
         elementosOrdenados.push({
           tipo: 'medida',
-          dados: { textoOriginal: '$', indice: indiceMedida },
+          dados: {
+            textoOriginal: matchMedida[0],
+            indice: indiceMedida,
+            rotulo: String(matchMedida[1] ?? '').trim(),
+          },
           posicao: matchMedida.index
         });
         indiceMedida++;

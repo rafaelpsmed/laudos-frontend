@@ -1899,7 +1899,7 @@ function FrasesTestes() {
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
-                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@); roxo = numeração {'({#N}, {#C}, {#LN}…)'}; laranja = {'{soma}'} / {'{classificacao}'}. Digite @ para reutilizar uma variável já inserida.
+                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@); roxo = numeração {'({#N}, {#C}, {#LN}…)'}; laranja = {'{soma}'} / {'{classificacao}'}. Digite @ para reutilizar uma variável já inserida. $ é medida; $(Tamanho do Nódulo) nomeia o campo.
                   </Text>
                   <FraseCampoComAudio
                     ref={fraseBaseTipTapComModeloRef}
@@ -2216,7 +2216,7 @@ function FrasesTestes() {
                 <Stack gap="xs">
                   <Input.Label required>Frase Base</Input.Label>
                   <Text size="xs" c="dimmed">
-                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@); roxo = numeração {'({#N}, {#C}, {#LN}…)'}; laranja = {'{soma}'} / {'{classificacao}'}. Digite @ para reutilizar uma variável já inserida.
+                    Enter cria nova linha. Chips: amarelo = local; azul = global; verde = referência (@); roxo = numeração {'({#N}, {#C}, {#LN}…)'}; laranja = {'{soma}'} / {'{classificacao}'}. Digite @ para reutilizar uma variável já inserida. $ é medida; $(Tamanho do Nódulo) nomeia o campo.
                   </Text>
                   <FraseCampoComAudio
                     ref={fraseBaseTipTapSemModeloRef}

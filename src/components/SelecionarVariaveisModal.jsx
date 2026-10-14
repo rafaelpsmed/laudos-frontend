@@ -1103,10 +1103,12 @@ function SelecionarVariaveisModal({ opened, onClose, variaveis, gruposOpcoes, el
               );
             } else if (elemento.tipo === 'medida') {
               const indice = elemento?.dados?.indice ?? 0;
+              const rotulo = String(elemento?.dados?.rotulo || '').trim();
+              const base = quantidadeMedidasNoTexto > 1 ? `Medida ${indice + 1}` : 'Medida';
               return (
                 <TextInput
                   key={`medida_${index}`}
-                  label={quantidadeMedidasNoTexto > 1 ? `Medida ${indice + 1}` : 'Medida'}
+                  label={rotulo ? `${base}: ${rotulo}` : base}
                   value={medidas[indice] ?? ''}
                   onChange={(event) => handleMedidaChange(indice, event.currentTarget.value)}
                   placeholder="Digite a medida"
